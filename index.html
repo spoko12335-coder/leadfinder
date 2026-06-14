@@ -84,8 +84,20 @@
 
           <div class="filters">
             <label class="check"><input id="onlyNoWebsite" type="checkbox" checked /> Bez strony WWW</label>
+            <label class="check"><input id="hideUnnamed" type="checkbox" checked /> Tylko z nazwą</label>
+            <label class="check"><input id="onlyContact" type="checkbox" /> Z kontaktem</label>
             <label class="check"><input id="onlyPhone" type="checkbox" /> Z telefonem</label>
             <label class="check"><input id="onlySocial" type="checkbox" /> Z social media</label>
+          </div>
+
+          <div class="sort-row">
+            <label>
+              Sortowanie
+              <select id="sortResults">
+                <option value="score">Najlepsze leady</option>
+                <option value="name">Nazwa A–Z</option>
+              </select>
+            </label>
           </div>
 
           <div id="resultsStats" class="stats-strip"></div>
@@ -134,7 +146,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA TESTOWA</p>
+          <p class="eyebrow">WERSJA 2.0</p>
           <h2 id="aboutHeading">Jak działa aplikacja?</h2>
           <p>
             LeadFinder pobiera publiczne dane firm z OpenStreetMap. Firmy bez pola
@@ -146,6 +158,7 @@
             <div><strong>✓</strong><span>Zapisywanie leadów i statusów bezpośrednio na telefonie</span></div>
             <div><strong>✓</strong><span>Generowanie gotowej wiadomości ofertowej</span></div>
             <div><strong>✓</strong><span>Eksport wyników do pliku CSV</span></div>
+            <div><strong>✓</strong><span>Ocena jakości leada i szybka weryfikacja w Google</span></div>
           </div>
           <div class="notice">
             Dane OpenStreetMap mogą być niepełne. Brak adresu WWW w aplikacji nie jest

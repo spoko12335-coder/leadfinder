@@ -70,8 +70,11 @@ const messageDialog = $("#messageDialog");
 
 searchForm.addEventListener("submit", handleSearch);
 $("#onlyNoWebsite").addEventListener("change", renderResults);
+$("#hideUnnamed").addEventListener("change", renderResults);
+$("#onlyContact").addEventListener("change", renderResults);
 $("#onlyPhone").addEventListener("change", renderResults);
 $("#onlySocial").addEventListener("change", renderResults);
+$("#sortResults").addEventListener("change", renderResults);
 $("#statusFilter").addEventListener("change", renderSaved);
 $("#exportResultsBtn").addEventListener("click", () => exportCsv(getFilteredResults(), "wyniki-leadfinder.csv"));
 $("#exportSavedBtn").addEventListener("click", () => exportCsv(state.saved, "zapisane-leady.csv"));
@@ -251,12 +254,15 @@ out center 180;`;
 
 function normalizeBusinesses(elements, category) {
   const seen = new Set();
+
   return elements
     .map(element => {
       const tags = element.tags || {};
       const lat = element.lat ?? element.center?.lat;
       const lon = element.lon ?? element.center?.lon;
-      const name = clean(tags.name || tags.brand || tags.operator || "Firma bez podanej nazwy");
+
+      const rawName = clean(tags.name || tags.brand || tags.operator || "");
+      const name = rawName || "Firma bez podanej nazwy";
       const website = cleanUrl(tags.website || tags["contact:website"] || tags.url || "");
       const phone = clean(tags.phone || tags["contact:phone"] || tags.mobile || "");
       const email = clean(tags.email || tags["contact:email"] || "");
@@ -264,11 +270,13 @@ function normalizeBusinesses(elements, category) {
       const instagram = cleanUrl(tags["contact:instagram"] || tags.instagram || "");
       const address = buildAddress(tags);
       const id = `${element.type}-${element.id}`;
-      return {
+
+      const company = {
         id,
         osmType: element.type,
         osmId: element.id,
         name,
+        hasRealName: Boolean(rawName),
         category,
         categoryLabel: categoryLabels[category],
         lat,
@@ -283,6 +291,11 @@ function normalizeBusinesses(elements, category) {
         status: "new",
         createdAt: new Date().toISOString()
       };
+
+      company.leadScore = calculateLeadScore(company);
+      company.leadQuality = leadQuality(company.leadScore);
+
+      return company;
     })
     .filter(company => {
       if (!company.lat || !company.lon) return false;
@@ -290,7 +303,30 @@ function normalizeBusinesses(elements, category) {
       seen.add(company.id);
       return true;
     })
-    .sort((a, b) => Number(a.hasWebsite) - Number(b.hasWebsite) || a.name.localeCompare(b.name, "pl"));
+    .sort((a, b) =>
+      Number(a.hasWebsite) - Number(b.hasWebsite) ||
+      b.leadScore - a.leadScore ||
+      a.name.localeCompare(b.name, "pl")
+    );
+}
+
+function calculateLeadScore(company) {
+  let score = 0;
+
+  if (!company.hasWebsite) score += 25;
+  if (company.hasRealName) score += 15;
+  if (company.phone) score += 30;
+  if (company.email) score += 15;
+  if (company.facebook || company.instagram) score += 20;
+  if (company.address && company.address !== "Adres niepodany w danych") score += 10;
+
+  return Math.min(score, 100);
+}
+
+function leadQuality(score) {
+  if (score >= 65) return { label: "WYSOKI", className: "high" };
+  if (score >= 40) return { label: "ŚREDNI", className: "medium" };
+  return { label: "DO WERYFIKACJI", className: "low" };
 }
 
 function buildAddress(tags) {
@@ -316,19 +352,32 @@ function cleanUrl(value) {
 }
 
 function getFilteredResults() {
-  return state.results.filter(company => {
+  const filtered = state.results.filter(company => {
     if ($("#onlyNoWebsite").checked && company.hasWebsite) return false;
+    if ($("#hideUnnamed").checked && !company.hasRealName) return false;
+    if ($("#onlyContact").checked && !company.phone && !company.email && !company.facebook && !company.instagram) return false;
     if ($("#onlyPhone").checked && !company.phone) return false;
     if ($("#onlySocial").checked && !company.facebook && !company.instagram) return false;
     return true;
+  });
+
+  const sort = $("#sortResults").value;
+
+  return [...filtered].sort((a, b) => {
+    if (sort === "name") return a.name.localeCompare(b.name, "pl");
+    return b.leadScore - a.leadScore || a.name.localeCompare(b.name, "pl");
   });
 }
 
 function renderResults() {
   const list = getFilteredResults();
   const noWebsiteCount = state.results.filter(item => !item.hasWebsite).length;
+  const contactCount = list.filter(item =>
+    item.phone || item.email || item.facebook || item.instagram
+  ).length;
+
   $("#resultsStats").textContent =
-    `Pokazano: ${list.length} • Łącznie: ${state.results.length} • Bez podanej strony: ${noWebsiteCount}`;
+    `Pokazano: ${list.length} • Z kontaktem: ${contactCount} • Łącznie: ${state.results.length} • Bez podanej strony: ${noWebsiteCount}`;
   resultsContainer.innerHTML = list.map(company => companyCard(company, "results")).join("");
   emptyState.classList.toggle("hidden", list.length !== 0);
 }
@@ -344,10 +393,18 @@ function renderSaved() {
 
 function companyCard(company, source) {
   const isSaved = state.saved.some(item => item.id === company.id);
-  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${company.lat},${company.lon}`;
+  const city = state.lastSearch?.city || "";
+  const searchPhrase = [company.name, city].filter(Boolean).join(" ");
+  const encodedPhrase = encodeURIComponent(searchPhrase);
+  const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodedPhrase}`;
+  const googleUrl = `https://www.google.com/search?q=${encodedPhrase}`;
+  const facebookSearchUrl = `https://www.google.com/search?q=${encodeURIComponent(`site:facebook.com ${searchPhrase}`)}`;
+
   const siteBadge = company.hasWebsite
     ? `<span class="badge has-site">MA STRONĘ</span>`
     : `<span class="badge no-site">BRAK WWW</span>`;
+
+  const quality = company.leadQuality || leadQuality(company.leadScore || calculateLeadScore(company));
 
   const socials = [
     company.facebook ? `<a href="${escapeAttr(company.facebook)}" target="_blank" rel="noopener">Facebook</a>` : "",
@@ -360,23 +417,33 @@ function companyCard(company, source) {
         <h3>${escapeHtml(company.name)}</h3>
         <p class="address">${escapeHtml(company.address)}</p>
       </div>
-      ${siteBadge}
+      <div class="badge-stack">
+        ${siteBadge}
+        <span class="quality-badge ${quality.className}">${quality.label} · ${company.leadScore || 0}/100</span>
+      </div>
     </div>
 
     <div class="meta">
-      <div class="meta-row"><span class="key">Telefon:</span><span>${company.phone ? `<a href="tel:${escapeAttr(company.phone)}">${escapeHtml(company.phone)}</a>` : "brak"}</span></div>
-      <div class="meta-row"><span class="key">E-mail:</span><span>${company.email ? `<a href="mailto:${escapeAttr(company.email)}">${escapeHtml(company.email)}</a>` : "brak"}</span></div>
+      <div class="meta-row"><span class="key">Telefon:</span><span>${company.phone ? `<a href="tel:${escapeAttr(company.phone)}">${escapeHtml(company.phone)}</a>` : "brak w danych"}</span></div>
+      <div class="meta-row"><span class="key">E-mail:</span><span>${company.email ? `<a href="mailto:${escapeAttr(company.email)}">${escapeHtml(company.email)}</a>` : "brak w danych"}</span></div>
       <div class="meta-row"><span class="key">Strona:</span><span>${company.website ? `<a href="${escapeAttr(company.website)}" target="_blank" rel="noopener">Otwórz stronę</a>` : "nie podano"}</span></div>
       <div class="meta-row"><span class="key">Social:</span><span>${socials || "nie podano"}</span></div>
     </div>
 
-    <div class="card-actions">
-      <a href="${mapUrl}" target="_blank" rel="noopener">Mapa</a>
+    <div class="verification-box">
+      <strong>Weryfikacja:</strong>
+      <span>sprawdź Google przed wysłaniem oferty.</span>
+    </div>
+
+    <div class="card-actions card-actions-3">
+      <a href="${mapUrl}" target="_blank" rel="noopener">Google Maps</a>
+      <a href="${googleUrl}" target="_blank" rel="noopener">Szukaj w Google</a>
+      <a href="${facebookSearchUrl}" target="_blank" rel="noopener">Szukaj Facebooka</a>
       <button data-action="message" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Utwórz wiadomość</button>
       ${source === "saved"
         ? `<button class="danger" data-action="remove" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Usuń lead</button>`
         : `<button class="save" data-action="save" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">${isSaved ? "✓ Zapisano" : "Zapisz lead"}</button>`}
-      ${company.phone ? `<a href="tel:${escapeAttr(company.phone)}">Zadzwoń</a>` : `<span></span>`}
+      ${company.phone ? `<a href="tel:${escapeAttr(company.phone)}">Zadzwoń</a>` : ""}
     </div>
 
     ${source === "saved" ? `<label class="status-select">Status kontaktu
@@ -419,7 +486,15 @@ function updateStatus(id, status) {
 
 function findCompany(id, source) {
   const list = source === "saved" ? state.saved : state.results;
-  return list.find(item => item.id === id);
+  const company = list.find(item => item.id === id);
+
+  if (company && typeof company.leadScore !== "number") {
+    company.hasRealName = company.name !== "Firma bez podanej nazwy";
+    company.leadScore = calculateLeadScore(company);
+    company.leadQuality = leadQuality(company.leadScore);
+  }
+
+  return company;
 }
 
 function openMessage(company) {
@@ -496,7 +571,19 @@ function csvCell(value) {
 
 function loadSaved() {
   try {
-    return JSON.parse(localStorage.getItem("leadfinder.saved") || "[]");
+    const saved = JSON.parse(localStorage.getItem("leadfinder.saved") || "[]");
+
+    return saved.map(company => {
+      const upgraded = {
+        ...company,
+        hasRealName: company.hasRealName ?? company.name !== "Firma bez podanej nazwy"
+      };
+      upgraded.leadScore = typeof upgraded.leadScore === "number"
+        ? upgraded.leadScore
+        : calculateLeadScore(upgraded);
+      upgraded.leadQuality = upgraded.leadQuality || leadQuality(upgraded.leadScore);
+      return upgraded;
+    });
   } catch {
     return [];
   }
