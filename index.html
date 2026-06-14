@@ -130,17 +130,29 @@
             <p id="purposeHint" class="mode-hint"></p>
 
             <div class="city-location-block">
-              <label class="city-input-label">
-                Miasto
-                <input
-                  id="city"
-                  name="city"
-                  type="text"
-                  placeholder="Wpisz miasto lub użyj lokalizacji"
-                  autocomplete="address-level2"
-                  required
-                />
-              </label>
+              <div class="city-autocomplete">
+                <label class="city-input-label">
+                  Miasto
+                  <input
+                    id="city"
+                    name="city"
+                    type="text"
+                    placeholder="Np. Rybnik"
+                    autocomplete="off"
+                    aria-autocomplete="list"
+                    aria-controls="citySuggestions"
+                    aria-expanded="false"
+                    required
+                  />
+                </label>
+
+                <div
+                  id="citySuggestions"
+                  class="city-suggestions hidden"
+                  role="listbox"
+                  aria-label="Podpowiedzi miejscowości"
+                ></div>
+              </div>
 
               <button id="locateBtn" class="location-button" type="button">
                 <span class="location-icon" aria-hidden="true">⌖</span>
@@ -149,7 +161,7 @@
             </div>
 
             <p id="locationStatus" class="location-status" aria-live="polite">
-              Lokalizacja służy tylko do ustawienia miasta i nie jest zapisywana.
+              Wpisz co najmniej 3 litery i wybierz właściwą miejscowość z listy.
             </p>
 
             <div class="grid-2">
@@ -228,9 +240,9 @@
           </form>
 
           <p class="hint">
-            Jedno wyszukiwanie zwraca maksymalnie 10 najlepiej ocenionych, unikalnych firm.
-            Możesz szukać klientów bez strony WWW albo firm do dowolnej oferty B2B.
-            Wyszukiwanie bez żadnego użytecznego leada nie zmniejsza limitu.
+            Jedno wyszukiwanie zwraca maksymalnie 10 firm z rzeczywistym publicznym kontaktem.
+            Puste wpisy bez telefonu, e-maila, social media ani strony nie są wyświetlane.
+            Wyszukiwanie bez wartościowego leada nie zmniejsza limitu.
           </p>
         </div>
 
@@ -246,7 +258,7 @@
           <div class="filters">
             <label class="check"><input id="onlyNoWebsite" type="checkbox" checked /> Bez strony WWW</label>
             <label class="check"><input id="hideUnnamed" type="checkbox" checked /> Tylko z nazwą</label>
-            <label class="check"><input id="onlyContact" type="checkbox" /> Z kontaktem</label>
+            <label class="check required-contact"><input id="onlyContact" type="checkbox" checked disabled /> Tylko z publicznym kontaktem</label>
             <label class="check"><input id="onlyPhone" type="checkbox" /> Z telefonem</label>
             <label class="check"><input id="onlySocial" type="checkbox" /> Z social media</label>
           </div>
@@ -311,7 +323,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 5.5</p>
+          <p class="eyebrow">WERSJA 5.7</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -325,7 +337,7 @@
             <div><strong>✓</strong><span>Dwa tryby: firmy bez WWW oraz dowolna sprzedaż B2B</span></div>
             <div><strong>✓</strong><span>Własna branża odbiorców i spersonalizowana oferta</span></div>
             <div><strong>✓</strong><span>Ręczne sprawdzanie firm w publicznej wyszukiwarce CEIDG/KRS</span></div>
-            <div><strong>✓</strong><span>Maksymalnie 10 unikalnych firm na jedno wyszukiwanie</span></div>
+            <div><strong>✓</strong><span>Maksymalnie 10 firm z publicznym kontaktem na jedno wyszukiwanie</span></div>
             <div><strong>✓</strong><span>Opis firmy i godziny otwarcia, gdy dane są dostępne</span></div>
             <div><strong>✓</strong><span>Pakiety 25, 50, 100, 200, 500 i 1000 wyszukiwań</span></div>
           </div>

@@ -26,6 +26,10 @@ const state = {
   adminOrders: [],
   lastSearch: null,
   detectedLocation: null,
+  citySuggestions: [],
+  citySuggestionTimer: null,
+  citySuggestionController: null,
+  citySuggestionCache: new Map(),
   deferredPrompt: null
 };
 
@@ -233,7 +237,11 @@ function bindEvents() {
   $("#guestRegisterBtn").addEventListener("click", openRegistrationDialog);
   $("#guestLoginBtn").addEventListener("click", openLoginDialog);
   $("#locateBtn").addEventListener("click", detectCurrentLocation);
-  $("#city").addEventListener("input", handleManualCityChange);
+  $("#city").addEventListener("input", handleCityInput);
+  $("#city").addEventListener("keydown", handleCityKeydown);
+  $("#city").addEventListener("focus", handleCityFocus);
+  $("#citySuggestions").addEventListener("click", handleCitySuggestionClick);
+  document.addEventListener("click", handleOutsideCitySuggestions);
   $("#closeAuthDialog").addEventListener("click", () => authDialog.close());
   $("#closePlansDialog").addEventListener("click", () => plansDialog.close());
   $("#closePaymentDialog").addEventListener("click", () => paymentDialog.close());
@@ -951,7 +959,7 @@ function handlePurposeChange() {
   $("#salesOfferFields").classList.toggle("hidden", !salesMode);
   $("#offerName").required = salesMode;
   $("#onlyNoWebsite").checked = !salesMode;
-  $("#onlyContact").checked = salesMode;
+  $("#onlyContact").checked = true;
   $("#purposeHint").textContent = salesMode
     ? "Znajdziemy firmy, do których możesz kierować ofertę produktu lub usługi. Firmy mogą posiadać własną stronę WWW."
     : "Znajdziemy firmy, które w danych OpenStreetMap nie mają podanej własnej strony internetowej.";
@@ -1066,14 +1074,18 @@ async function handleSearch(event) {
       city
     );
 
-    state.results = normalizeBusinesses(
+    const normalizedResults = normalizeBusinesses(
       elements,
       categoryDefinition,
       city,
       purpose,
       offerName,
       offerBenefit
-    ).slice(0, MAX_RESULTS_PER_SEARCH);
+    );
+
+    state.results = normalizedResults
+      .filter(company => isUsableLead(company, purpose))
+      .slice(0, MAX_RESULTS_PER_SEARCH);
 
     state.lastSearch = {
       city,
@@ -1090,30 +1102,18 @@ async function handleSearch(event) {
       ? `Firmy do oferty: ${categoryDefinition.label} — ${city}`
       : `Firmy bez WWW: ${categoryDefinition.label} — ${city}`;
 
-    const usableLeadCount = state.results.filter(company => {
-      if (!company.hasRealName) return false;
-
-      if (purpose === "website") {
-        return !company.hasWebsite;
-      }
-
-      return Boolean(
-        company.phone ||
-        company.email ||
-        company.facebook ||
-        company.instagram ||
-        company.website
-      );
-    }).length;
+    const usableLeadCount = state.results.length;
 
     if (usableLeadCount === 0) {
       await failSearch(requestId);
       reserved = false;
       resultsSection.classList.add("hidden");
       emptyState.classList.remove("hidden");
-      $("#emptyState h3").textContent = "Brak firm w darmowym źródle";
+      $("#emptyState h3").textContent = "Brak firm z publicznym kontaktem";
       $("#emptyState p").textContent =
-        "To wyszukiwanie nie zostało odjęte z Twojego pakietu. Zwiększ promień albo wybierz inną branżę.";
+        purpose === "website"
+          ? "OpenStreetMap nie zawiera w tym obszarze firm bez strony WWW, które mają telefon, e-mail lub social media. Wyszukiwanie nie zostało odjęte z pakietu."
+          : "OpenStreetMap nie zawiera w tym obszarze firm z publicznym telefonem, e-mailem, social media ani stroną WWW. Wyszukiwanie nie zostało odjęte z pakietu.";
       return;
     }
 
@@ -1155,20 +1155,300 @@ function createRequestId() {
   });
 }
 
-function handleManualCityChange() {
-  const city = clean($("#city").value);
+function handleCityInput() {
+  const query = clean($("#city").value);
 
   if (
     state.detectedLocation &&
-    city.toLocaleLowerCase("pl") !==
+    query.toLocaleLowerCase("pl") !==
       state.detectedLocation.city.toLocaleLowerCase("pl")
   ) {
     state.detectedLocation = null;
+  }
+
+  clearTimeout(state.citySuggestionTimer);
+
+  if (query.length < 3) {
+    closeCitySuggestions();
     setLocationStatus(
-      "Wpisano miasto ręcznie. Lokalizacja nie będzie używana.",
+      "Wpisz co najmniej 3 litery i wybierz właściwą miejscowość z listy.",
       "neutral"
     );
+    return;
   }
+
+  setLocationStatus("Szukam pasujących miejscowości…", "loading");
+
+  state.citySuggestionTimer = setTimeout(() => {
+    loadCitySuggestions(query);
+  }, 650);
+}
+
+function handleCityFocus() {
+  const query = clean($("#city").value);
+
+  if (
+    query.length >= 3 &&
+    state.citySuggestions.length
+  ) {
+    openCitySuggestions();
+  }
+}
+
+function handleCityKeydown(event) {
+  const container = $("#citySuggestions");
+  if (container.classList.contains("hidden")) return;
+
+  const options = [...container.querySelectorAll("[role='option']")];
+  if (!options.length) return;
+
+  const activeIndex = options.findIndex(option =>
+    option.classList.contains("active")
+  );
+
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    const nextIndex = activeIndex < options.length - 1
+      ? activeIndex + 1
+      : 0;
+    setActiveCitySuggestion(options, nextIndex);
+  }
+
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    const nextIndex = activeIndex > 0
+      ? activeIndex - 1
+      : options.length - 1;
+    setActiveCitySuggestion(options, nextIndex);
+  }
+
+  if (event.key === "Enter" && activeIndex >= 0) {
+    event.preventDefault();
+    selectCitySuggestion(Number(options[activeIndex].dataset.index));
+  }
+
+  if (event.key === "Escape") {
+    closeCitySuggestions();
+  }
+}
+
+function handleCitySuggestionClick(event) {
+  const option = event.target.closest("[data-index]");
+  if (!option) return;
+  selectCitySuggestion(Number(option.dataset.index));
+}
+
+function handleOutsideCitySuggestions(event) {
+  if (!event.target.closest(".city-autocomplete")) {
+    closeCitySuggestions();
+  }
+}
+
+async function loadCitySuggestions(query) {
+  const normalizedQuery = query.toLocaleLowerCase("pl");
+
+  if (state.citySuggestionCache.has(normalizedQuery)) {
+    state.citySuggestions = state.citySuggestionCache.get(normalizedQuery);
+    renderCitySuggestions();
+    return;
+  }
+
+  if (state.citySuggestionController) {
+    state.citySuggestionController.abort();
+  }
+
+  const controller = new AbortController();
+  state.citySuggestionController = controller;
+
+  const params = new URLSearchParams({
+    q: `${query}, Polska`,
+    format: "jsonv2",
+    limit: "8",
+    countrycodes: "pl",
+    addressdetails: "1",
+    namedetails: "1",
+    dedupe: "1",
+    "accept-language": "pl"
+  });
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+      {
+        headers: { Accept: "application/json" },
+        signal: controller.signal
+      }
+    );
+
+    if (!response.ok) throw new Error("CITY_SUGGESTIONS_FAILED");
+
+    const rows = await response.json();
+
+    const suggestions = rows
+      .map(normalizeCitySuggestion)
+      .filter(item => item.city && item.lat && item.lon)
+      .filter((item, index, list) =>
+        list.findIndex(other => other.key === item.key) === index
+      )
+      .slice(0, 8);
+
+    state.citySuggestions = suggestions;
+    state.citySuggestionCache.set(normalizedQuery, suggestions);
+    renderCitySuggestions();
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+
+    console.error("Błąd podpowiedzi miejscowości:", error);
+    state.citySuggestions = [];
+    closeCitySuggestions();
+    setLocationStatus(
+      "Nie udało się pobrać podpowiedzi. Możesz wpisać miasto ręcznie.",
+      "error"
+    );
+  } finally {
+    if (state.citySuggestionController === controller) {
+      state.citySuggestionController = null;
+    }
+  }
+}
+
+function normalizeCitySuggestion(row) {
+  const address = row.address || {};
+  const city = clean(
+    row.namedetails?.name ||
+    row.name ||
+    address.city ||
+    address.town ||
+    address.village ||
+    address.municipality ||
+    ""
+  );
+
+  const postcode = clean(address.postcode || "");
+  const county = clean(address.county || "");
+  const municipality = clean(address.municipality || "");
+  const stateName = clean(address.state || "");
+  const district = clean(address.city_district || "");
+  const lat = Number(row.lat);
+  const lon = Number(row.lon);
+
+  const details = [
+    postcode,
+    district,
+    municipality && municipality !== city ? municipality : "",
+    county && county !== city ? county : "",
+    stateName
+  ].filter(Boolean);
+
+  return {
+    city,
+    postcode,
+    county,
+    municipality,
+    state: stateName,
+    district,
+    lat,
+    lon,
+    displayName: clean(row.display_name || city),
+    subtitle: [...new Set(details)].join(" • "),
+    key: [
+      city.toLocaleLowerCase("pl"),
+      postcode,
+      county.toLocaleLowerCase("pl"),
+      lat.toFixed(4),
+      lon.toFixed(4)
+    ].join("|")
+  };
+}
+
+function renderCitySuggestions() {
+  const container = $("#citySuggestions");
+
+  if (!state.citySuggestions.length) {
+    container.innerHTML = `
+      <div class="city-suggestion-empty">
+        Nie znaleziono pasującej miejscowości w Polsce.
+      </div>
+    `;
+    openCitySuggestions();
+    setLocationStatus(
+      "Brak pasujących miejscowości. Sprawdź pisownię.",
+      "error"
+    );
+    return;
+  }
+
+  container.innerHTML = state.citySuggestions
+    .map((item, index) => `
+      <button
+        type="button"
+        class="city-suggestion"
+        role="option"
+        aria-selected="false"
+        data-index="${index}"
+      >
+        <span class="city-suggestion-main">
+          <strong>${escapeHtml(item.city)}</strong>
+          ${item.postcode ? `<b>${escapeHtml(item.postcode)}</b>` : ""}
+        </span>
+        <small>${escapeHtml(item.subtitle || item.displayName)}</small>
+      </button>
+    `)
+    .join("");
+
+  openCitySuggestions();
+  setLocationStatus(
+    "Wybierz właściwą miejscowość z listy.",
+    "neutral"
+  );
+}
+
+function setActiveCitySuggestion(options, index) {
+  options.forEach((option, optionIndex) => {
+    const active = optionIndex === index;
+    option.classList.toggle("active", active);
+    option.setAttribute("aria-selected", String(active));
+  });
+
+  options[index]?.scrollIntoView({ block: "nearest" });
+}
+
+function selectCitySuggestion(index) {
+  const item = state.citySuggestions[index];
+  if (!item) return;
+
+  state.detectedLocation = {
+    lat: item.lat,
+    lon: item.lon,
+    city: item.city,
+    postcode: item.postcode,
+    displayName: item.displayName
+  };
+
+  $("#city").value = item.city;
+  closeCitySuggestions();
+
+  const selectedLabel = [
+    item.city,
+    item.postcode,
+    item.state
+  ].filter(Boolean).join(", ");
+
+  setLocationStatus(
+    `Wybrano: ${selectedLabel}. Wyszukiwanie użyje dokładnej lokalizacji.`,
+    "success"
+  );
+}
+
+function openCitySuggestions() {
+  const container = $("#citySuggestions");
+  container.classList.remove("hidden");
+  $("#city").setAttribute("aria-expanded", "true");
+}
+
+function closeCitySuggestions() {
+  $("#citySuggestions").classList.add("hidden");
+  $("#city").setAttribute("aria-expanded", "false");
 }
 
 async function detectCurrentLocation() {
@@ -1208,12 +1488,13 @@ async function detectCurrentLocation() {
       lat,
       lon,
       city: place.city,
+      postcode: place.postcode || "",
       displayName: place.displayName
     };
 
     $("#city").value = place.city;
     setLocationStatus(
-      `Ustawiono: ${place.city}. Możesz teraz rozpocząć wyszukiwanie.`,
+      `Ustawiono: ${place.city}${place.postcode ? `, ${place.postcode}` : ""}. Możesz teraz rozpocząć wyszukiwanie.`,
       "success"
     );
   } catch (error) {
@@ -1264,6 +1545,7 @@ async function reverseGeocodePosition(lat, lon) {
 
     return {
       city,
+      postcode: clean(address.postcode || ""),
       displayName: clean(data.display_name || city)
     };
   } catch (error) {
@@ -1693,7 +1975,7 @@ function buildBusinessDescription({
 
   const resolvedCategoryLabel = categoryLabel || "firma usługowa";
   const sentences = [
-    `${capitalizeFirst(resolvedCategoryLabel)} w miejscowości ${city}.`
+    `Firma została dopasowana do kategorii „${resolvedCategoryLabel}” w miejscowości ${city} na podstawie publicznych oznaczeń OpenStreetMap.`
   ];
 
   const serviceText = extractServiceDescription(tags);
@@ -1714,8 +1996,10 @@ function buildBusinessDescription({
   }
 
   if (!website) {
-    sentences.push("W OpenStreetMap nie podano własnej strony internetowej.");
+    sentences.push("W publicznym wpisie nie podano własnej strony internetowej.");
   }
+
+  sentences.push("Przed kontaktem należy potwierdzić aktualność danych.");
 
   return {
     text: sentences.join(" "),
@@ -1778,29 +2062,66 @@ function truncateText(value, maxLength) {
   return `${text.slice(0, maxLength - 1).trim()}…`;
 }
 
+function hasDirectContact(company) {
+  return Boolean(
+    company.phone ||
+    company.email ||
+    company.facebook ||
+    company.instagram
+  );
+}
+
+function hasSalesContact(company) {
+  return Boolean(
+    hasDirectContact(company) ||
+    company.website
+  );
+}
+
+function isUsableLead(company, purpose = company.leadPurpose || "website") {
+  if (!company.hasRealName) return false;
+
+  if (purpose === "website") {
+    return !company.hasWebsite && hasDirectContact(company);
+  }
+
+  return hasSalesContact(company);
+}
+
+function contactChannelCount(company, purpose = company.leadPurpose || "website") {
+  const channels = [
+    Boolean(company.phone),
+    Boolean(company.email),
+    Boolean(company.facebook || company.instagram)
+  ];
+
+  if (purpose === "sales") {
+    channels.push(Boolean(company.website));
+  }
+
+  return channels.filter(Boolean).length;
+}
+
 function calculateLeadScore(company, purpose = company.leadPurpose || "website") {
   let score = 0;
 
-  if (purpose === "sales") {
-    if (company.hasRealName) score += 15;
-    if (company.phone) score += 35;
-    if (company.email) score += 20;
-    if (company.facebook || company.instagram) score += 15;
-    if (company.website) score += 10;
-    if (company.address && company.address !== "Adres niepodany w danych") {
-      score += 5;
-    }
-    if (company.openingHours) score += 5;
-  } else {
-    if (!company.hasWebsite) score += 25;
-    if (company.hasRealName) score += 15;
-    if (company.phone) score += 30;
-    if (company.email) score += 15;
-    if (company.facebook || company.instagram) score += 20;
-    if (company.address && company.address !== "Adres niepodany w danych") {
-      score += 10;
-    }
+  if (company.hasRealName) score += 5;
+  if (company.phone) score += 40;
+  if (company.email) score += 25;
+  if (company.facebook || company.instagram) score += 20;
+
+  if (purpose === "sales" && company.website) {
+    score += 15;
   }
+
+  if (
+    company.address &&
+    company.address !== "Adres niepodany w danych"
+  ) {
+    score += 7;
+  }
+
+  if (company.openingHours) score += 3;
 
   return Math.min(score, 100);
 }
@@ -1847,10 +2168,9 @@ function getFilteredResults() {
     if ($("#hideUnnamed").checked && !company.hasRealName) return false;
     if (
       $("#onlyContact").checked &&
-      !company.phone &&
-      !company.email &&
-      !company.facebook &&
-      !company.instagram
+      !(company.leadPurpose === "sales"
+        ? hasSalesContact(company)
+        : hasDirectContact(company))
     ) return false;
     if ($("#onlyPhone").checked && !company.phone) return false;
     if (
@@ -1871,13 +2191,12 @@ function getFilteredResults() {
 
 function renderResults() {
   const list = getFilteredResults();
-  const noWebsiteCount = state.results.filter(item => !item.hasWebsite).length;
-  const contactCount = list.filter(item =>
-    item.phone || item.email || item.facebook || item.instagram
-  ).length;
+  const noWebsiteCount = list.filter(item => !item.hasWebsite).length;
+  const phoneCount = list.filter(item => item.phone).length;
+  const emailCount = list.filter(item => item.email).length;
 
   $("#resultsStats").textContent =
-    `Pokazano: ${list.length} z maks. ${MAX_RESULTS_PER_SEARCH} • Z kontaktem: ${contactCount} • Bez podanej strony: ${noWebsiteCount}`;
+    `Pokazano: ${list.length} z maks. ${MAX_RESULTS_PER_SEARCH} wartościowych leadów • Telefon: ${phoneCount} • E-mail: ${emailCount} • Bez WWW: ${noWebsiteCount}`;
 
   resultsContainer.innerHTML = list
     .map(company => companyCard(company, "results"))
@@ -2011,17 +2330,22 @@ function companyCard(company, source) {
 
     <div class="company-description">
       <div class="description-heading">
-        <strong>Opis firmy</strong>
-        <span>${company.descriptionSource === "openstreetmap" ? "z OpenStreetMap" : "opis automatyczny"}</span>
+        <strong>${company.descriptionSource === "openstreetmap" ? "Opis firmy" : "Podsumowanie danych"}</strong>
+        <span>${company.descriptionSource === "openstreetmap" ? "z OpenStreetMap" : "na podstawie publicznego wpisu"}</span>
       </div>
       <p>${escapeHtml(company.description || "Brak opisu w danych.")}</p>
     </div>
 
+    <div class="contact-summary">
+      <strong>Dostępny kontakt</strong>
+      <span>${contactChannelCount(company)} ${contactChannelCount(company) === 1 ? "kanał" : "kanały"}</span>
+    </div>
+
     <div class="meta">
-      <div class="meta-row"><span class="key">Telefon:</span><span>${company.phone ? `<a href="tel:${escapeAttr(company.phone)}">${escapeHtml(company.phone)}</a>` : "brak w danych"}</span></div>
-      <div class="meta-row"><span class="key">E-mail:</span><span>${company.email ? `<a href="mailto:${escapeAttr(company.email)}">${escapeHtml(company.email)}</a>` : "brak w danych"}</span></div>
-      <div class="meta-row"><span class="key">Strona:</span><span>${company.website ? `<a href="${escapeAttr(company.website)}" target="_blank" rel="noopener">Otwórz stronę</a>` : "nie podano"}</span></div>
-      <div class="meta-row"><span class="key">Social:</span><span>${socials || "nie podano"}</span></div>
+      ${company.phone ? `<div class="meta-row"><span class="key">Telefon:</span><span><a href="tel:${escapeAttr(company.phone)}">${escapeHtml(company.phone)}</a></span></div>` : ""}
+      ${company.email ? `<div class="meta-row"><span class="key">E-mail:</span><span><a href="mailto:${escapeAttr(company.email)}">${escapeHtml(company.email)}</a></span></div>` : ""}
+      ${company.website ? `<div class="meta-row"><span class="key">Strona:</span><span><a href="${escapeAttr(company.website)}" target="_blank" rel="noopener">Otwórz stronę</a></span></div>` : ""}
+      ${socials ? `<div class="meta-row"><span class="key">Social:</span><span>${socials}</span></div>` : ""}
       ${company.openingHours ? `<div class="meta-row"><span class="key">Godziny:</span><span>${escapeHtml(company.openingHours)}</span></div>` : ""}
     </div>
 
