@@ -151,6 +151,8 @@ async function handleSearch(event) {
 }
 
 async function geocodeCity(city) {
+  setLoadingStage("Sprawdzam miejscowość…");
+
   const params = new URLSearchParams({
     q: `${city}, Polska`,
     format: "jsonv2",
@@ -158,52 +160,93 @@ async function geocodeCity(city) {
     countrycodes: "pl",
     "accept-language": "pl"
   });
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-    headers: { "Accept": "application/json" }
-  });
-  if (!response.ok) throw new Error("GEOCODING_FAILED");
-  const data = await response.json();
-  if (!data.length) throw new Error("CITY_NOT_FOUND");
-  return { lat: Number(data[0].lat), lon: Number(data[0].lon), displayName: data[0].display_name };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+      {
+        headers: { "Accept": "application/json" },
+        signal: controller.signal
+      }
+    );
+
+    if (!response.ok) throw new Error("GEOCODING_FAILED");
+
+    const data = await response.json();
+    if (!data.length) throw new Error("CITY_NOT_FOUND");
+
+    return {
+      lat: Number(data[0].lat),
+      lon: Number(data[0].lon),
+      displayName: data[0].display_name
+    };
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("GEOCODING_TIMEOUT");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function fetchBusinesses(lat, lon, radius, category) {
+  setLoadingStage("Pobieram firmy…");
+
   const selectors = categoryQueries[category];
-  const lines = selectors.map(selector => `${selector}(around:${radius},${lat},${lon});`).join("\n");
-  const query = `[out:json][timeout:35];
+  const lines = selectors
+    .map(selector => `${selector}(around:${radius},${lat},${lon});`)
+    .join("\n");
+
+  const query = `[out:json][timeout:15];
 (
 ${lines}
 );
-out center tags 180;`;
+out center 180;`;
 
   const endpoints = [
-    "https://overpass.private.coffee/api/interpreter",
-    "https://overpass-api.de/api/interpreter"
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter"
   ];
 
-  let lastError = null;
-  for (const endpoint of endpoints) {
+  let lastError = new Error("OVERPASS_FAILED");
+
+  for (let index = 0; index < endpoints.length; index += 1) {
+    setLoadingStage(index === 0 ? "Pobieram firmy…" : "Próbuję serwera zapasowego…");
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 18000);
+
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 45000);
-      const response = await fetch(endpoint, {
+      const response = await fetch(endpoints[index], {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body: new URLSearchParams({ data: query }),
+        body: "data=" + encodeURIComponent(query),
         signal: controller.signal
       });
-      clearTimeout(timer);
-      if (!response.ok) {
-        lastError = response.status === 429 ? new Error("RATE_LIMIT") : new Error("OVERPASS_FAILED");
+
+      if (response.status === 429) {
+        lastError = new Error("RATE_LIMIT");
         continue;
       }
+
+      if (!response.ok) {
+        lastError = new Error("OVERPASS_FAILED");
+        continue;
+      }
+
       const data = await response.json();
       return data.elements || [];
     } catch (error) {
-      lastError = error?.name === "AbortError" ? new Error("OVERPASS_FAILED") : error;
+      lastError = error?.name === "AbortError"
+        ? new Error("OVERPASS_TIMEOUT")
+        : new Error("OVERPASS_FAILED");
+    } finally {
+      clearTimeout(timer);
     }
   }
-  throw lastError || new Error("OVERPASS_FAILED");
+
+  throw lastError;
 }
 
 function normalizeBusinesses(elements, category) {
@@ -463,6 +506,10 @@ function persistSaved() {
   localStorage.setItem("leadfinder.saved", JSON.stringify(state.saved));
 }
 
+function setLoadingStage(text) {
+  searchBtn.querySelector(".btn-label").textContent = text;
+}
+
 function setLoading(isLoading) {
   searchBtn.disabled = isLoading;
   searchBtn.querySelector(".btn-label").textContent = isLoading ? "Wyszukiwanie…" : "Szukaj firm";
@@ -478,6 +525,8 @@ function friendlyError(error) {
   if (error.message === "CITY_NOT_FOUND") return "Nie znaleziono tej miejscowości. Sprawdź pisownię i spróbuj ponownie.";
   if (error.message === "RATE_LIMIT") return "Publiczny serwer jest chwilowo przeciążony. Spróbuj ponownie za moment.";
   if (error.message === "GEOCODING_FAILED") return "Nie udało się ustalić położenia miasta.";
+  if (error.message === "GEOCODING_TIMEOUT") return "Serwer lokalizacji nie odpowiedział. Spróbuj ponownie za chwilę.";
+  if (error.message === "OVERPASS_TIMEOUT") return "Serwery firm nie odpowiedziały w wyznaczonym czasie. Spróbuj ponownie za chwilę lub wybierz mniejszy promień.";
   if (error.message === "OVERPASS_FAILED") return "Nie udało się pobrać firm. Publiczny serwer OpenStreetMap może być przeciążony.";
   return "Wystąpił błąd połączenia. Sprawdź internet i spróbuj ponownie.";
 }

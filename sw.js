@@ -1,4 +1,4 @@
-const CACHE = "leadfinder-v1";
+const CACHE = "leadfinder-v2";
 const ASSETS = [
   "./",
   "./index.html",
