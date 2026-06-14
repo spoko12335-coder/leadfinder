@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="description" content="Wyszukiwarka lokalnych firm bez podanej strony internetowej." />
+  <title>LeadFinder — firmy bez strony WWW</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">NARZĘDZIE SPRZEDAŻOWE</p>
+        <h1>LeadFinder</h1>
+        <p class="subtitle">Znajduj lokalne firmy bez podanej strony WWW</p>
+      </div>
+      <button id="installBtn" class="secondary small hidden" type="button">Zainstaluj</button>
+    </header>
+
+    <main>
+      <section id="searchView" class="view active" aria-labelledby="searchHeading">
+        <div class="panel">
+          <h2 id="searchHeading">Wyszukaj firmy</h2>
+          <form id="searchForm">
+            <label>
+              Miasto
+              <input id="city" name="city" type="text" placeholder="np. Grudziądz" value="Grudziądz" required />
+            </label>
+
+            <div class="grid-2">
+              <label>
+                Branża
+                <select id="category" name="category">
+                  <option value="hairdresser">Salon fryzjerski</option>
+                  <option value="beauty">Salon kosmetyczny</option>
+                  <option value="nails">Paznokcie / manicure</option>
+                  <option value="car_repair">Mechanik samochodowy</option>
+                  <option value="plumber">Hydraulik</option>
+                  <option value="electrician">Elektryk</option>
+                  <option value="builder">Usługi budowlane</option>
+                  <option value="photographer">Fotograf</option>
+                  <option value="physiotherapist">Fizjoterapeuta</option>
+                  <option value="restaurant">Restauracja</option>
+                </select>
+              </label>
+
+              <label>
+                Promień
+                <select id="radius" name="radius">
+                  <option value="3000">3 km</option>
+                  <option value="5000">5 km</option>
+                  <option value="10000" selected>10 km</option>
+                  <option value="20000">20 km</option>
+                  <option value="30000">30 km</option>
+                </select>
+              </label>
+            </div>
+
+            <button id="searchBtn" class="primary" type="submit">
+              <span class="btn-label">Szukaj firm</span>
+              <span class="spinner hidden" aria-hidden="true"></span>
+            </button>
+          </form>
+
+          <p class="hint">
+            Wynik „brak strony” oznacza, że w danych OpenStreetMap nie podano adresu WWW.
+            Przed kontaktem warto wykonać dodatkową weryfikację.
+          </p>
+        </div>
+
+        <div id="resultsSection" class="hidden">
+          <div class="results-head">
+            <div>
+              <p class="eyebrow">WYNIKI</p>
+              <h2 id="resultsTitle">Znalezione firmy</h2>
+            </div>
+            <button id="exportResultsBtn" class="secondary small" type="button">Eksport CSV</button>
+          </div>
+
+          <div class="filters">
+            <label class="check"><input id="onlyNoWebsite" type="checkbox" checked /> Bez strony WWW</label>
+            <label class="check"><input id="onlyPhone" type="checkbox" /> Z telefonem</label>
+            <label class="check"><input id="onlySocial" type="checkbox" /> Z social media</label>
+          </div>
+
+          <div id="resultsStats" class="stats-strip"></div>
+          <div id="results" class="cards"></div>
+        </div>
+
+        <div id="emptyState" class="empty hidden">
+          <div class="empty-icon">⌕</div>
+          <h3>Brak wyników</h3>
+          <p>Zwiększ promień albo wybierz inną branżę.</p>
+        </div>
+
+        <div id="errorBox" class="error hidden" role="alert"></div>
+      </section>
+
+      <section id="savedView" class="view" aria-labelledby="savedHeading">
+        <div class="results-head">
+          <div>
+            <p class="eyebrow">BAZA LEADÓW</p>
+            <h2 id="savedHeading">Zapisane firmy</h2>
+          </div>
+          <button id="exportSavedBtn" class="secondary small" type="button">Eksport CSV</button>
+        </div>
+
+        <div class="filters">
+          <label>
+            Status
+            <select id="statusFilter">
+              <option value="">Wszystkie</option>
+              <option value="new">Nowy</option>
+              <option value="contacted">Skontaktowano</option>
+              <option value="interested">Zainteresowany</option>
+              <option value="rejected">Odrzucony</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="savedStats" class="stats-strip"></div>
+        <div id="savedResults" class="cards"></div>
+        <div id="savedEmpty" class="empty hidden">
+          <div class="empty-icon">★</div>
+          <h3>Nie masz zapisanych firm</h3>
+          <p>Znajdź firmę i naciśnij „Zapisz lead”.</p>
+        </div>
+      </section>
+
+      <section id="aboutView" class="view" aria-labelledby="aboutHeading">
+        <div class="panel">
+          <p class="eyebrow">WERSJA TESTOWA</p>
+          <h2 id="aboutHeading">Jak działa aplikacja?</h2>
+          <p>
+            LeadFinder pobiera publiczne dane firm z OpenStreetMap. Firmy bez pola
+            <code>website</code> są oznaczane jako potencjalne leady.
+          </p>
+          <div class="info-list">
+            <div><strong>✓</strong><span>Wyszukiwanie według miasta, branży i promienia</span></div>
+            <div><strong>✓</strong><span>Filtrowanie firm bez strony, z telefonem i social media</span></div>
+            <div><strong>✓</strong><span>Zapisywanie leadów i statusów bezpośrednio na telefonie</span></div>
+            <div><strong>✓</strong><span>Generowanie gotowej wiadomości ofertowej</span></div>
+            <div><strong>✓</strong><span>Eksport wyników do pliku CSV</span></div>
+          </div>
+          <div class="notice">
+            Dane OpenStreetMap mogą być niepełne. Brak adresu WWW w aplikacji nie jest
+            jednoznacznym dowodem, że firma nie posiada własnej strony.
+          </div>
+          <p class="attribution">
+            Dane © współtwórcy OpenStreetMap, licencja ODbL.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Nawigacja aplikacji">
+      <button class="nav-btn active" data-view="searchView" type="button">
+        <span class="nav-icon">⌕</span><span>Szukaj</span>
+      </button>
+      <button class="nav-btn" data-view="savedView" type="button">
+        <span class="nav-icon">★</span><span>Zapisane</span>
+      </button>
+      <button class="nav-btn" data-view="aboutView" type="button">
+        <span class="nav-icon">i</span><span>Informacje</span>
+      </button>
+    </nav>
+  </div>
+
+  <dialog id="messageDialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">GOTOWA OFERTA</p>
+        <h2 id="messageCompany">Wiadomość</h2>
+      </div>
+      <button id="closeDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+    <textarea id="messageText" rows="15"></textarea>
+    <div class="dialog-actions">
+      <button id="copyMessage" class="primary" type="button">Kopiuj wiadomość</button>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="./app.js"></script>
+</body>
+</html>
