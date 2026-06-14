@@ -1769,6 +1769,8 @@ function companyCard(company, source) {
     `https://www.google.com/search?q=${encodedPhrase}`;
   const facebookSearchUrl =
     `https://www.google.com/search?q=${encodeURIComponent(`site:facebook.com ${searchPhrase}`)}`;
+  const ceidgUrl =
+    `https://www.biznes.gov.pl/pl/wyszukiwarka-firm/?companyName=${encodeURIComponent(company.name)}&searchType=advanced`;
 
   const siteBadge = company.hasWebsite
     ? `<span class="badge has-site">MA STRONĘ</span>`
@@ -1823,13 +1825,14 @@ function companyCard(company, source) {
 
     <div class="verification-box">
       <strong>Weryfikacja:</strong>
-      <span>sprawdź Google przed wysłaniem oferty.</span>
+      <span>sprawdź firmę w Google oraz w publicznej wyszukiwarce CEIDG/KRS przed wysłaniem oferty.</span>
     </div>
 
     <div class="card-actions card-actions-3">
       <a href="${mapUrl}" target="_blank" rel="noopener">Google Maps</a>
       <a href="${googleUrl}" target="_blank" rel="noopener">Szukaj w Google</a>
       <a href="${facebookSearchUrl}" target="_blank" rel="noopener">Szukaj Facebooka</a>
+      <a class="ceidg-action" href="${ceidgUrl}" target="_blank" rel="noopener">Sprawdź CEIDG/KRS</a>
       <button data-action="message" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Utwórz wiadomość</button>
       ${source === "saved"
         ? `<button class="danger" data-action="remove" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Usuń lead</button>`
