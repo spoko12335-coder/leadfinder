@@ -411,3 +411,240 @@ code { color: var(--accent-2); }
     font-size: 8px;
   }
 }
+
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quota-panel {
+  margin-bottom: 14px;
+  padding: 17px;
+  border: 1px solid rgba(98,214,154,.19);
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(98,214,154,.13), transparent 40%),
+    linear-gradient(145deg, rgba(17,31,49,.98), rgba(11,22,37,.98));
+  box-shadow: var(--shadow);
+}
+
+.quota-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.quota-top h2 {
+  margin-bottom: 4px;
+}
+
+.quota-email {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.quota-count {
+  display: grid;
+  justify-items: end;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .7px;
+}
+
+.quota-count strong {
+  color: var(--success);
+  font-size: 31px;
+  line-height: 1;
+}
+
+.quota-progress {
+  height: 8px;
+  margin: 15px 0 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255,255,255,.07);
+}
+
+.quota-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--success));
+  transition: width .3s ease;
+}
+
+.quota-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.quota-plan-btn {
+  margin-top: 13px;
+}
+
+.login-required {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 15px;
+  padding: 12px 13px;
+  border: 1px solid rgba(245,184,59,.18);
+  border-radius: 12px;
+  background: rgba(245,184,59,.07);
+  color: #ffe2a4;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 5px 0 17px;
+  padding: 5px;
+  border-radius: 12px;
+  background: rgba(0,0,0,.18);
+}
+
+.auth-tab {
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.auth-tab.active {
+  background: rgba(245,184,59,.14);
+  color: var(--accent-2);
+}
+
+.auth-form {
+  display: grid;
+  gap: 13px;
+}
+
+.auth-form .primary {
+  margin-top: 3px;
+}
+
+.auth-message {
+  margin-top: 14px;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.auth-error {
+  border: 1px solid rgba(255,112,112,.25);
+  background: rgba(255,112,112,.08);
+  color: #ffc0c0;
+}
+
+.auth-success {
+  border: 1px solid rgba(98,214,154,.22);
+  background: rgba(98,214,154,.08);
+  color: #bfeecf;
+}
+
+.account-dialog-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: rgba(255,255,255,.035);
+}
+
+.account-dialog-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.account-dialog-card strong {
+  overflow-wrap: anywhere;
+}
+
+.auth-wide-btn {
+  width: 100%;
+  margin-top: 11px;
+}
+
+.danger-button {
+  min-height: 46px;
+  border: 1px solid rgba(255,112,112,.25);
+  border-radius: 12px;
+  background: rgba(255,112,112,.08);
+  color: #ffb0b0;
+  font-weight: 800;
+}
+
+.plans-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.plan-card {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-height: 185px;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255,255,255,.035);
+}
+
+.plan-card.current-plan {
+  border-color: rgba(98,214,154,.45);
+  box-shadow: inset 0 0 0 1px rgba(98,214,154,.13);
+}
+
+.plan-card h3,
+.plan-card strong {
+  margin: 0;
+}
+
+.plan-card strong {
+  color: var(--accent-2);
+  font-size: 14px;
+}
+
+.plan-card button {
+  width: 100%;
+  margin-top: auto;
+}
+
+.plan-label {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1px;
+}
+
+@media (max-width: 520px) {
+  .header-actions {
+    display: grid;
+    justify-items: end;
+  }
+
+  .quota-meta {
+    display: grid;
+  }
+
+  .plans-grid {
+    grid-template-columns: 1fr;
+  }
+}

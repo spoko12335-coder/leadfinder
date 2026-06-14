@@ -19,13 +19,50 @@
         <h1>LeadFinder</h1>
         <p class="subtitle">Znajduj lokalne firmy bez podanej strony WWW</p>
       </div>
-      <button id="installBtn" class="secondary small hidden" type="button">Zainstaluj</button>
+
+      <div class="header-actions">
+        <button id="installBtn" class="secondary small hidden" type="button">Zainstaluj</button>
+        <button id="authBtn" class="secondary small" type="button">Zaloguj</button>
+      </div>
     </header>
 
     <main>
       <section id="searchView" class="view active" aria-labelledby="searchHeading">
+        <section id="quotaPanel" class="quota-panel hidden" aria-live="polite">
+          <div class="quota-top">
+            <div>
+              <p class="eyebrow">TWOJE KONTO</p>
+              <h2 id="quotaPlanName">Pakiet Bezpłatny</h2>
+              <p id="quotaEmail" class="quota-email"></p>
+            </div>
+            <div class="quota-count">
+              <strong id="quotaRemaining">25</strong>
+              <span>pozostało</span>
+            </div>
+          </div>
+
+          <div class="quota-progress" aria-hidden="true">
+            <span id="quotaProgressBar"></span>
+          </div>
+
+          <div class="quota-meta">
+            <span>Wykorzystano: <strong id="quotaUsage">0 / 25</strong></span>
+            <span id="quotaRenewal">Odnowienie: —</span>
+          </div>
+
+          <button id="openPlansBtn" class="secondary small quota-plan-btn" type="button">
+            Zobacz pakiety
+          </button>
+        </section>
+
         <div class="panel">
           <h2 id="searchHeading">Wyszukaj firmy</h2>
+
+          <div id="loginRequiredNotice" class="login-required">
+            <strong>25 wyszukiwań miesięcznie za darmo.</strong>
+            <span>Zaloguj się lub utwórz konto, aby rozpocząć.</span>
+          </div>
+
           <form id="searchForm">
             <label>
               Miasto
@@ -62,7 +99,7 @@
             </div>
 
             <button id="searchBtn" class="primary" type="submit">
-              <span class="btn-label">Szukaj firm</span>
+              <span class="btn-label">Zaloguj się, aby szukać</span>
               <span class="spinner hidden" aria-hidden="true"></span>
             </button>
           </form>
@@ -122,6 +159,10 @@
           <button id="exportSavedBtn" class="secondary small" type="button">Eksport CSV</button>
         </div>
 
+        <div id="savedLoginNotice" class="login-required">
+          Zaloguj się, aby przechowywać leady na swoim koncie.
+        </div>
+
         <div class="filters">
           <label>
             Status
@@ -146,26 +187,25 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 2.0</p>
-          <h2 id="aboutHeading">Jak działa aplikacja?</h2>
+          <p class="eyebrow">WERSJA 4.0</p>
+          <h2 id="aboutHeading">Konta i miesięczne limity</h2>
           <p>
-            LeadFinder pobiera publiczne dane firm z OpenStreetMap. Firmy bez pola
-            <code>website</code> są oznaczane jako potencjalne leady.
+            Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
+            25 prawidłowo wykonanych wyszukiwań w miesiącu.
           </p>
           <div class="info-list">
-            <div><strong>✓</strong><span>Wyszukiwanie według miasta, branży i promienia</span></div>
-            <div><strong>✓</strong><span>Filtrowanie firm bez strony, z telefonem i social media</span></div>
-            <div><strong>✓</strong><span>Zapisywanie leadów i statusów bezpośrednio na telefonie</span></div>
-            <div><strong>✓</strong><span>Generowanie gotowej wiadomości ofertowej</span></div>
-            <div><strong>✓</strong><span>Eksport wyników do pliku CSV</span></div>
-            <div><strong>✓</strong><span>Ocena jakości leada i szybka weryfikacja w Google</span></div>
+            <div><strong>✓</strong><span>Rejestracja i logowanie przez Supabase</span></div>
+            <div><strong>✓</strong><span>Licznik wykorzystanych i pozostałych wyszukiwań</span></div>
+            <div><strong>✓</strong><span>Automatyczne odnowienie limitu na początku miesiąca</span></div>
+            <div><strong>✓</strong><span>Leady zapisywane na koncie użytkownika</span></div>
+            <div><strong>✓</strong><span>Pakiety 25, 50, 100, 200, 500 i 1000 wyszukiwań</span></div>
           </div>
           <div class="notice">
-            Dane OpenStreetMap mogą być niepełne. Brak adresu WWW w aplikacji nie jest
-            jednoznacznym dowodem, że firma nie posiada własnej strony.
+            Płatności za wyższe pakiety zostaną podłączone w następnym etapie.
+            Na obecnym etapie aktywny jest pakiet bezpłatny.
           </div>
           <p class="attribution">
-            Dane © współtwórcy OpenStreetMap, licencja ODbL.
+            Dane firm © współtwórcy OpenStreetMap, licencja ODbL.
           </p>
         </div>
       </section>
@@ -184,6 +224,122 @@
     </nav>
   </div>
 
+  <dialog id="authDialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">KONTO LEADFINDER</p>
+        <h2 id="authDialogTitle">Zaloguj się</h2>
+      </div>
+      <button id="closeAuthDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <div id="authGuestContent">
+      <div class="auth-tabs">
+        <button class="auth-tab active" data-auth-tab="login" type="button">Logowanie</button>
+        <button class="auth-tab" data-auth-tab="register" type="button">Rejestracja</button>
+      </div>
+
+      <form id="loginForm" class="auth-form">
+        <label>
+          E-mail
+          <input id="loginEmail" type="email" autocomplete="email" required />
+        </label>
+        <label>
+          Hasło
+          <input id="loginPassword" type="password" autocomplete="current-password" minlength="6" required />
+        </label>
+        <button class="primary" type="submit">Zaloguj się</button>
+      </form>
+
+      <form id="registerForm" class="auth-form hidden">
+        <label>
+          Imię lub nazwa
+          <input id="registerName" type="text" autocomplete="name" required />
+        </label>
+        <label>
+          E-mail
+          <input id="registerEmail" type="email" autocomplete="email" required />
+        </label>
+        <label>
+          Hasło
+          <input id="registerPassword" type="password" autocomplete="new-password" minlength="6" required />
+        </label>
+        <label>
+          Powtórz hasło
+          <input id="registerPasswordConfirm" type="password" autocomplete="new-password" minlength="6" required />
+        </label>
+        <button class="primary" type="submit">Utwórz darmowe konto</button>
+      </form>
+
+      <div id="authMessage" class="auth-message hidden" role="status"></div>
+    </div>
+
+    <div id="authUserContent" class="hidden">
+      <div class="account-dialog-card">
+        <span>Zalogowano jako</span>
+        <strong id="accountDialogEmail"></strong>
+      </div>
+      <button id="accountPlansBtn" class="secondary auth-wide-btn" type="button">Zobacz pakiety</button>
+      <button id="logoutBtn" class="danger-button auth-wide-btn" type="button">Wyloguj się</button>
+    </div>
+  </dialog>
+
+  <dialog id="plansDialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">PAKIETY MIESIĘCZNE</p>
+        <h2>Wybierz odpowiedni limit</h2>
+      </div>
+      <button id="closePlansDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <div class="plans-grid">
+      <article class="plan-card current-plan" data-plan="free">
+        <span class="plan-label">BEZPŁATNY</span>
+        <h3>25 wyszukiwań</h3>
+        <strong>0 zł</strong>
+        <button class="secondary" type="button" disabled>Aktywny startowo</button>
+      </article>
+
+      <article class="plan-card" data-plan="start">
+        <span class="plan-label">START</span>
+        <h3>50 wyszukiwań</h3>
+        <strong>19,99 zł / mies.</strong>
+        <button class="plan-soon secondary" type="button">Wkrótce</button>
+      </article>
+
+      <article class="plan-card" data-plan="standard">
+        <span class="plan-label">STANDARD</span>
+        <h3>100 wyszukiwań</h3>
+        <strong>34,99 zł / mies.</strong>
+        <button class="plan-soon secondary" type="button">Wkrótce</button>
+      </article>
+
+      <article class="plan-card" data-plan="pro">
+        <span class="plan-label">PRO</span>
+        <h3>200 wyszukiwań</h3>
+        <strong>59,99 zł / mies.</strong>
+        <button class="plan-soon secondary" type="button">Wkrótce</button>
+      </article>
+
+      <article class="plan-card" data-plan="business">
+        <span class="plan-label">BUSINESS</span>
+        <h3>500 wyszukiwań</h3>
+        <strong>139,99 zł / mies.</strong>
+        <button class="plan-soon secondary" type="button">Wkrótce</button>
+      </article>
+
+      <article class="plan-card" data-plan="agency">
+        <span class="plan-label">AGENCY</span>
+        <h3>1000 wyszukiwań</h3>
+        <strong>249,99 zł / mies.</strong>
+        <button class="plan-soon secondary" type="button">Wkrótce</button>
+      </article>
+    </div>
+
+    <p class="hint">Płatności zostaną uruchomione po zakończeniu testów aplikacji.</p>
+  </dialog>
+
   <dialog id="messageDialog">
     <div class="dialog-head">
       <div>
@@ -199,6 +355,8 @@
   </dialog>
 
   <div id="toast" class="toast hidden" role="status"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./app.js"></script>
 </body>
 </html>
