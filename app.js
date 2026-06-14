@@ -25,6 +25,7 @@ const state = {
   currentOrder: null,
   adminOrders: [],
   lastSearch: null,
+  detectedLocation: null,
   deferredPrompt: null
 };
 
@@ -229,6 +230,10 @@ function bindEvents() {
   );
 
   $("#authBtn").addEventListener("click", openAuthDialog);
+  $("#guestRegisterBtn").addEventListener("click", openRegistrationDialog);
+  $("#guestLoginBtn").addEventListener("click", openLoginDialog);
+  $("#locateBtn").addEventListener("click", detectCurrentLocation);
+  $("#city").addEventListener("input", handleManualCityChange);
   $("#closeAuthDialog").addEventListener("click", () => authDialog.close());
   $("#closePlansDialog").addEventListener("click", () => plansDialog.close());
   $("#closePaymentDialog").addEventListener("click", () => paymentDialog.close());
@@ -352,13 +357,22 @@ async function applySession(session) {
 
 function updateAuthUI() {
   const loggedIn = Boolean(state.session);
+
+  $("#authLoadingScreen").classList.add("hidden");
+  $("#guestLanding").classList.toggle("hidden", loggedIn);
+  $("#appShell").classList.toggle("hidden", !loggedIn);
+  document.body.classList.toggle("guest-mode", !loggedIn);
+
   $("#authBtn").textContent = loggedIn ? "Konto" : "Zaloguj";
   $("#quotaPanel").classList.toggle("hidden", !loggedIn);
   $("#loginRequiredNotice").classList.toggle("hidden", loggedIn);
   $("#savedLoginNotice").classList.toggle("hidden", loggedIn);
   $("#authGuestContent").classList.toggle("hidden", loggedIn);
   $("#authUserContent").classList.toggle("hidden", !loggedIn);
-  $("#adminPanelBtn").classList.toggle("hidden", !loggedIn || !state.profile?.is_admin);
+  $("#adminPanelBtn").classList.toggle(
+    "hidden",
+    !loggedIn || !state.profile?.is_admin
+  );
 
   if (loggedIn) {
     const email = state.session.user.email || "";
@@ -366,8 +380,21 @@ function updateAuthUI() {
     $("#accountDialogEmail").textContent = email;
     searchBtn.querySelector(".btn-label").textContent = "Szukaj firm";
   } else {
-    searchBtn.querySelector(".btn-label").textContent = "Zaloguj się, aby szukać";
+    searchBtn.querySelector(".btn-label").textContent =
+      "Zaloguj się, aby szukać";
   }
+}
+
+function openRegistrationDialog() {
+  clearAuthMessage();
+  setAuthTab("register");
+  authDialog.showModal();
+}
+
+function openLoginDialog() {
+  clearAuthMessage();
+  setAuthTab("login");
+  authDialog.showModal();
 }
 
 function openAuthDialog() {
@@ -376,8 +403,8 @@ function openAuthDialog() {
   if (state.session) {
     $("#authDialogTitle").textContent = "Twoje konto";
   } else {
-    $("#authDialogTitle").textContent = "Zaloguj się";
-    setAuthTab("login");
+    $("#authDialogTitle").textContent = "Utwórz darmowe konto";
+    setAuthTab("register");
   }
 
   authDialog.showModal();
@@ -843,7 +870,7 @@ function renderQuota() {
   if (!state.session || !state.quota) return;
 
   const quota = state.quota;
-  const limit = Number(quota.monthly_limit || 25);
+  const limit = Number(quota.monthly_limit || 3);
   const used = Number(quota.used || 0);
   const remaining = Number(quota.remaining ?? Math.max(limit - used, 0));
   const percent = Math.min((used / Math.max(limit, 1)) * 100, 100);
@@ -877,8 +904,8 @@ async function reserveSearch(requestId, city, category, radius) {
   if (!result?.allowed) {
     state.quota = {
       ...(state.quota || {}),
-      used: result?.used ?? state.quota?.used ?? 25,
-      monthly_limit: result?.monthly_limit ?? state.quota?.monthly_limit ?? 25,
+      used: result?.used ?? state.quota?.used ?? 3,
+      monthly_limit: result?.monthly_limit ?? state.quota?.monthly_limit ?? 3,
       remaining: 0
     };
     renderQuota();
@@ -1030,7 +1057,7 @@ async function handleSearch(event) {
     );
     reserved = true;
 
-    const location = await geocodeCity(city);
+    const location = await resolveSearchLocation(city);
     const elements = await fetchBusinesses(
       location.lat,
       location.lon,
@@ -1126,6 +1153,181 @@ function createRequestId() {
     const value = char === "x" ? random : (random & 0x3 | 0x8);
     return value.toString(16);
   });
+}
+
+function handleManualCityChange() {
+  const city = clean($("#city").value);
+
+  if (
+    state.detectedLocation &&
+    city.toLocaleLowerCase("pl") !==
+      state.detectedLocation.city.toLocaleLowerCase("pl")
+  ) {
+    state.detectedLocation = null;
+    setLocationStatus(
+      "Wpisano miasto ręcznie. Lokalizacja nie będzie używana.",
+      "neutral"
+    );
+  }
+}
+
+async function detectCurrentLocation() {
+  clearMessages();
+
+  if (!navigator.geolocation) {
+    setLocationStatus(
+      "Ta przeglądarka nie obsługuje lokalizacji. Wpisz miasto ręcznie.",
+      "error"
+    );
+    return;
+  }
+
+  const button = $("#locateBtn");
+  button.disabled = true;
+  button.classList.add("is-locating");
+  setLocationStatus("Pobieram lokalizację urządzenia…", "loading");
+
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        resolve,
+        reject,
+        {
+          enableHighAccuracy: false,
+          timeout: 15000,
+          maximumAge: 300000
+        }
+      );
+    });
+
+    const lat = Number(position.coords.latitude);
+    const lon = Number(position.coords.longitude);
+    const place = await reverseGeocodePosition(lat, lon);
+
+    state.detectedLocation = {
+      lat,
+      lon,
+      city: place.city,
+      displayName: place.displayName
+    };
+
+    $("#city").value = place.city;
+    setLocationStatus(
+      `Ustawiono: ${place.city}. Możesz teraz rozpocząć wyszukiwanie.`,
+      "success"
+    );
+  } catch (error) {
+    console.error("Błąd lokalizacji:", error);
+    setLocationStatus(geolocationErrorMessage(error), "error");
+  } finally {
+    button.disabled = false;
+    button.classList.remove("is-locating");
+  }
+}
+
+async function reverseGeocodePosition(lat, lon) {
+  const params = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    format: "jsonv2",
+    zoom: "10",
+    addressdetails: "1",
+    "accept-language": "pl"
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?${params.toString()}`,
+      {
+        headers: { Accept: "application/json" },
+        signal: controller.signal
+      }
+    );
+
+    if (!response.ok) throw new Error("REVERSE_GEOCODING_FAILED");
+
+    const data = await response.json();
+    const address = data.address || {};
+    const city = clean(
+      address.city ||
+      address.town ||
+      address.village ||
+      address.municipality ||
+      address.county ||
+      ""
+    );
+
+    if (!city) throw new Error("LOCALITY_NOT_FOUND");
+
+    return {
+      city,
+      displayName: clean(data.display_name || city)
+    };
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error("REVERSE_GEOCODING_TIMEOUT");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveSearchLocation(city) {
+  if (
+    state.detectedLocation &&
+    clean(city).toLocaleLowerCase("pl") ===
+      state.detectedLocation.city.toLocaleLowerCase("pl")
+  ) {
+    setLoadingStage("Używam Twojej lokalizacji…");
+    return {
+      lat: state.detectedLocation.lat,
+      lon: state.detectedLocation.lon,
+      displayName: state.detectedLocation.displayName
+    };
+  }
+
+  return geocodeCity(city);
+}
+
+function setLocationStatus(text, type = "neutral") {
+  const status = $("#locationStatus");
+  status.textContent = text;
+  status.classList.remove(
+    "location-success",
+    "location-error",
+    "location-loading"
+  );
+
+  if (type === "success") status.classList.add("location-success");
+  if (type === "error") status.classList.add("location-error");
+  if (type === "loading") status.classList.add("location-loading");
+}
+
+function geolocationErrorMessage(error) {
+  if (error?.code === 1) {
+    return "Nie udzielono zgody na lokalizację. Wpisz miasto ręcznie albo zezwól na lokalizację w ustawieniach przeglądarki.";
+  }
+  if (error?.code === 2) {
+    return "Nie udało się ustalić położenia urządzenia. Włącz lokalizację i spróbuj ponownie.";
+  }
+  if (error?.code === 3) {
+    return "Ustalanie lokalizacji trwało zbyt długo. Spróbuj ponownie.";
+  }
+  if (error?.message === "REVERSE_GEOCODING_TIMEOUT") {
+    return "Ustalono położenie, ale nie udało się szybko rozpoznać miasta. Wpisz je ręcznie.";
+  }
+  if (
+    error?.message === "REVERSE_GEOCODING_FAILED" ||
+    error?.message === "LOCALITY_NOT_FOUND"
+  ) {
+    return "Nie udało się rozpoznać miejscowości dla tej lokalizacji. Wpisz miasto ręcznie.";
+  }
+
+  return "Nie udało się pobrać lokalizacji. Wpisz miasto ręcznie.";
 }
 
 async function geocodeCity(city) {

@@ -12,12 +12,53 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <section id="authLoadingScreen" class="auth-loading-screen" aria-live="polite">
+    <div class="brand-loader">
+      <div class="brand-loader-icon">⌕</div>
+      <strong>LeadFinder</strong>
+      <span>Uruchamianie aplikacji…</span>
+    </div>
+  </section>
+
+  <section id="guestLanding" class="guest-landing hidden">
+    <div class="guest-hero-card">
+      <div class="guest-logo">⌕</div>
+      <p class="eyebrow">LEADFINDER</p>
+      <h1>Znajduj firmy i nowych klientów</h1>
+      <p class="guest-lead">
+        Wyszukuj lokalne firmy, zapisuj leady i przygotowuj gotowe wiadomości sprzedażowe.
+      </p>
+
+      <div class="free-account-badge">
+        <strong>Darmowe konto</strong>
+        <span>3 wyszukiwania każdego miesiąca</span>
+      </div>
+
+      <div class="guest-benefits">
+        <div><span>✓</span><p><strong>Maksymalnie 10 firm</strong><small>w jednym wyszukiwaniu</small></p></div>
+        <div><span>✓</span><p><strong>Zapisane leady</strong><small>dostępne po ponownym logowaniu</small></p></div>
+        <div><span>✓</span><p><strong>Gotowe wiadomości</strong><small>dla stron WWW i dowolnej oferty B2B</small></p></div>
+      </div>
+
+      <button id="guestRegisterBtn" class="primary guest-primary" type="button">
+        Załóż darmowe konto
+      </button>
+      <button id="guestLoginBtn" class="secondary guest-secondary" type="button">
+        Mam już konto — zaloguj się
+      </button>
+
+      <p class="guest-privacy">
+        Rejestracja jest bezpłatna. Dane konta są używane do zapisywania leadów i limitu wyszukiwań.
+      </p>
+    </div>
+  </section>
+
+  <div id="appShell" class="app-shell hidden">
     <header class="topbar">
       <div>
         <p class="eyebrow">NARZĘDZIE SPRZEDAŻOWE</p>
         <h1>LeadFinder</h1>
-        <p class="subtitle">Znajduj lokalne firmy bez podanej strony WWW</p>
+        <p class="subtitle">Znajduj firmy, leady i nowych klientów</p>
       </div>
 
       <div class="header-actions">
@@ -36,7 +77,7 @@
               <p id="quotaEmail" class="quota-email"></p>
             </div>
             <div class="quota-count">
-              <strong id="quotaRemaining">25</strong>
+              <strong id="quotaRemaining">3</strong>
               <span>pozostało</span>
             </div>
           </div>
@@ -46,7 +87,7 @@
           </div>
 
           <div class="quota-meta">
-            <span>Wykorzystano: <strong id="quotaUsage">0 / 25</strong></span>
+            <span>Wykorzystano: <strong id="quotaUsage">0 / 3</strong></span>
             <span id="quotaRenewal">Odnowienie: —</span>
           </div>
 
@@ -59,7 +100,7 @@
           <h2 id="searchHeading">Wyszukaj firmy</h2>
 
           <div id="loginRequiredNotice" class="login-required">
-            <strong>25 wyszukiwań miesięcznie za darmo.</strong>
+            <strong>3 wyszukiwania miesięcznie za darmo.</strong>
             <span>Zaloguj się lub utwórz konto, aby rozpocząć.</span>
           </div>
 
@@ -88,10 +129,28 @@
 
             <p id="purposeHint" class="mode-hint"></p>
 
-            <label>
-              Miasto
-              <input id="city" name="city" type="text" placeholder="np. Grudziądz" value="Grudziądz" required />
-            </label>
+            <div class="city-location-block">
+              <label class="city-input-label">
+                Miasto
+                <input
+                  id="city"
+                  name="city"
+                  type="text"
+                  placeholder="Wpisz miasto lub użyj lokalizacji"
+                  autocomplete="address-level2"
+                  required
+                />
+              </label>
+
+              <button id="locateBtn" class="location-button" type="button">
+                <span class="location-icon" aria-hidden="true">⌖</span>
+                <span>Użyj mojej lokalizacji</span>
+              </button>
+            </div>
+
+            <p id="locationStatus" class="location-status" aria-live="polite">
+              Lokalizacja służy tylko do ustawienia miasta i nie jest zapisywana.
+            </p>
 
             <div class="grid-2">
               <label>
@@ -252,11 +311,11 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 5.4</p>
+          <p class="eyebrow">WERSJA 5.5</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
-            25 prawidłowo wykonanych wyszukiwań w miesiącu.
+            3 prawidłowo wykonane wyszukiwania w miesiącu.
           </p>
           <div class="info-list">
             <div><strong>✓</strong><span>Rejestracja i logowanie przez Supabase</span></div>
@@ -367,7 +426,7 @@
     <div class="plans-grid">
       <article class="plan-card current-plan" data-plan="free">
         <span class="plan-label">BEZPŁATNY</span>
-        <h3>25 wyszukiwań</h3>
+        <h3>3 wyszukiwania</h3>
         <strong>0 zł</strong>
         <button class="secondary" type="button" disabled>Aktywny startowo</button>
       </article>
