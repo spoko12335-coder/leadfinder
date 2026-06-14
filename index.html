@@ -187,8 +187,8 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 4.0</p>
-          <h2 id="aboutHeading">Konta i miesięczne limity</h2>
+          <p class="eyebrow">WERSJA 5.0</p>
+          <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
             25 prawidłowo wykonanych wyszukiwań w miesiącu.
@@ -201,8 +201,8 @@
             <div><strong>✓</strong><span>Pakiety 25, 50, 100, 200, 500 i 1000 wyszukiwań</span></div>
           </div>
           <div class="notice">
-            Płatności za wyższe pakiety zostaną podłączone w następnym etapie.
-            Na obecnym etapie aktywny jest pakiet bezpłatny.
+            Wyższy pakiet można zamówić i opłacić zwykłym przelewem bankowym.
+            Administrator zatwierdza wpłatę i aktywuje limit na 30 dni.
           </div>
           <p class="attribution">
             Dane firm © współtwórcy OpenStreetMap, licencja ODbL.
@@ -280,6 +280,7 @@
         <strong id="accountDialogEmail"></strong>
       </div>
       <button id="accountPlansBtn" class="secondary auth-wide-btn" type="button">Zobacz pakiety</button>
+      <button id="adminPanelBtn" class="secondary auth-wide-btn hidden" type="button">Panel administratora</button>
       <button id="logoutBtn" class="danger-button auth-wide-btn" type="button">Wyloguj się</button>
     </div>
   </dialog>
@@ -305,39 +306,93 @@
         <span class="plan-label">START</span>
         <h3>50 wyszukiwań</h3>
         <strong>19,99 zł / mies.</strong>
-        <button class="plan-soon secondary" type="button">Wkrótce</button>
+        <button class="buy-plan secondary" data-plan-code="start" type="button">Kup przelewem</button>
       </article>
 
       <article class="plan-card" data-plan="standard">
         <span class="plan-label">STANDARD</span>
         <h3>100 wyszukiwań</h3>
         <strong>34,99 zł / mies.</strong>
-        <button class="plan-soon secondary" type="button">Wkrótce</button>
+        <button class="buy-plan secondary" data-plan-code="standard" type="button">Kup przelewem</button>
       </article>
 
       <article class="plan-card" data-plan="pro">
         <span class="plan-label">PRO</span>
         <h3>200 wyszukiwań</h3>
         <strong>59,99 zł / mies.</strong>
-        <button class="plan-soon secondary" type="button">Wkrótce</button>
+        <button class="buy-plan secondary" data-plan-code="pro" type="button">Kup przelewem</button>
       </article>
 
       <article class="plan-card" data-plan="business">
         <span class="plan-label">BUSINESS</span>
         <h3>500 wyszukiwań</h3>
         <strong>139,99 zł / mies.</strong>
-        <button class="plan-soon secondary" type="button">Wkrótce</button>
+        <button class="buy-plan secondary" data-plan-code="business" type="button">Kup przelewem</button>
       </article>
 
       <article class="plan-card" data-plan="agency">
         <span class="plan-label">AGENCY</span>
         <h3>1000 wyszukiwań</h3>
         <strong>249,99 zł / mies.</strong>
-        <button class="plan-soon secondary" type="button">Wkrótce</button>
+        <button class="buy-plan secondary" data-plan-code="agency" type="button">Kup przelewem</button>
       </article>
     </div>
 
-    <p class="hint">Płatności zostaną uruchomione po zakończeniu testów aplikacji.</p>
+    <section class="orders-section">
+      <div class="orders-heading">
+        <h3>Moje zamówienia</h3>
+        <button id="refreshOrdersBtn" class="secondary small" type="button">Odśwież</button>
+      </div>
+      <div id="myOrders" class="orders-list"></div>
+      <p id="myOrdersEmpty" class="hint">Nie masz jeszcze zamówień.</p>
+    </section>
+
+    <p class="hint">Pakiet jest aktywowany ręcznie po zaksięgowaniu przelewu i działa przez 30 dni.</p>
+  </dialog>
+
+  <dialog id="paymentDialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">PŁATNOŚĆ PRZELEWEM</p>
+        <h2 id="paymentDialogTitle">Zamówienie pakietu</h2>
+      </div>
+      <button id="closePaymentDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <div id="paymentInstructions" class="payment-details"></div>
+    <button id="copyPaymentBtn" class="primary" type="button">Kopiuj dane do przelewu</button>
+    <p class="hint">Po wpłacie administrator sprawdzi przelew i aktywuje pakiet na 30 dni.</p>
+  </dialog>
+
+  <dialog id="adminDialog" class="wide-dialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">PANEL ADMINISTRATORA</p>
+        <h2>Zamówienia i dane przelewu</h2>
+      </div>
+      <button id="closeAdminDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <section class="admin-section">
+      <h3>Dane do przelewu</h3>
+      <form id="paymentSettingsForm" class="admin-form">
+        <label>Odbiorca<input id="settingSellerName" type="text" placeholder="np. Kamil Mazur" /></label>
+        <label>Numer konta<input id="settingBankAccount" type="text" inputmode="numeric" placeholder="26 cyfr" /></label>
+        <label>Nazwa banku<input id="settingBankName" type="text" placeholder="opcjonalnie" /></label>
+        <label>E-mail kontaktowy<input id="settingPaymentEmail" type="email" /></label>
+        <label>Dodatkowa instrukcja<textarea id="settingInstructions" rows="3" placeholder="np. Pakiet aktywujemy po zaksięgowaniu wpłaty."></textarea></label>
+        <button class="primary" type="submit">Zapisz dane płatności</button>
+      </form>
+    </section>
+
+    <section class="admin-section">
+      <div class="orders-heading">
+        <h3>Oczekujące zamówienia</h3>
+        <button id="refreshAdminOrdersBtn" class="secondary small" type="button">Odśwież</button>
+      </div>
+      <div id="adminOrders" class="admin-orders"></div>
+      <p id="adminOrdersEmpty" class="hint">Brak oczekujących zamówień.</p>
+    </section>
   </dialog>
 
   <dialog id="messageDialog">

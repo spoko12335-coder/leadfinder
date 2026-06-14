@@ -17,7 +17,12 @@ const state = {
   results: [],
   saved: [],
   session: null,
+  profile: null,
   quota: null,
+  orders: [],
+  paymentSettings: null,
+  currentOrder: null,
+  adminOrders: [],
   lastSearch: null,
   deferredPrompt: null
 };
@@ -65,6 +70,8 @@ const savedEmpty = $("#savedEmpty");
 const messageDialog = $("#messageDialog");
 const authDialog = $("#authDialog");
 const plansDialog = $("#plansDialog");
+const paymentDialog = $("#paymentDialog");
+const adminDialog = $("#adminDialog");
 
 bindEvents();
 initApp();
@@ -88,12 +95,25 @@ function bindEvents() {
   $("#authBtn").addEventListener("click", openAuthDialog);
   $("#closeAuthDialog").addEventListener("click", () => authDialog.close());
   $("#closePlansDialog").addEventListener("click", () => plansDialog.close());
+  $("#closePaymentDialog").addEventListener("click", () => paymentDialog.close());
+  $("#closeAdminDialog").addEventListener("click", () => adminDialog.close());
   $("#openPlansBtn").addEventListener("click", openPlansDialog);
   $("#accountPlansBtn").addEventListener("click", () => {
     authDialog.close();
     openPlansDialog();
   });
   $("#logoutBtn").addEventListener("click", logout);
+  $("#adminPanelBtn").addEventListener("click", () => {
+    authDialog.close();
+    openAdminDialog();
+  });
+  $("#refreshOrdersBtn").addEventListener("click", async () => {
+    await loadMyOrders();
+    showToast("Lista zamówień odświeżona.");
+  });
+  $("#refreshAdminOrdersBtn").addEventListener("click", loadAdminOrders);
+  $("#paymentSettingsForm").addEventListener("submit", savePaymentSettings);
+  $("#copyPaymentBtn").addEventListener("click", copyPaymentDetails);
   $("#loginForm").addEventListener("submit", login);
   $("#registerForm").addEventListener("submit", register);
   $("#closeDialog").addEventListener("click", () => messageDialog.close());
@@ -103,10 +123,8 @@ function bindEvents() {
     button.addEventListener("click", () => setAuthTab(button.dataset.authTab));
   });
 
-  $$(".plan-soon").forEach(button => {
-    button.addEventListener("click", () =>
-      showToast("Płatności za wyższe pakiety uruchomimy w kolejnym etapie.")
-    );
+  $$(".buy-plan").forEach(button => {
+    button.addEventListener("click", () => createPlanOrder(button.dataset.planCode));
   });
 
   $$(".nav-btn").forEach(btn => {
@@ -175,13 +193,20 @@ async function applySession(session) {
   updateAuthUI();
 
   if (session) {
+    await loadProfile();
     await loadQuota();
+    await loadPaymentSettings();
+    await loadMyOrders();
     await migrateLegacyLeads();
     await loadSavedLeads();
   } else {
+    state.profile = null;
     state.quota = null;
+    state.orders = [];
+    state.paymentSettings = null;
     state.saved = [];
     renderQuota();
+    renderMyOrders();
     renderSaved();
   }
 }
@@ -194,6 +219,7 @@ function updateAuthUI() {
   $("#savedLoginNotice").classList.toggle("hidden", loggedIn);
   $("#authGuestContent").classList.toggle("hidden", loggedIn);
   $("#authUserContent").classList.toggle("hidden", !loggedIn);
+  $("#adminPanelBtn").classList.toggle("hidden", !loggedIn || !state.profile?.is_admin);
 
   if (loggedIn) {
     const email = state.session.user.email || "";
@@ -351,6 +377,312 @@ function authErrorMessage(error) {
   }
 
   return "Nie udało się wykonać tej operacji. Spróbuj ponownie.";
+}
+
+async function loadProfile() {
+  if (!state.session) return;
+
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("id,email,full_name,is_admin")
+    .eq("id", state.session.user.id)
+    .single();
+
+  if (error) {
+    console.error("Błąd profilu:", error);
+    state.profile = null;
+  } else {
+    state.profile = data;
+  }
+
+  updateAuthUI();
+}
+
+async function loadPaymentSettings() {
+  if (!state.session) return;
+
+  const { data, error } = await supabaseClient.rpc("get_payment_settings");
+
+  if (error) {
+    console.error("Błąd danych płatności:", error);
+    state.paymentSettings = null;
+    return;
+  }
+
+  state.paymentSettings = Array.isArray(data) ? data[0] : data;
+}
+
+async function loadMyOrders() {
+  if (!state.session) {
+    state.orders = [];
+    renderMyOrders();
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("plan_orders")
+    .select("id,order_code,plan_code,amount_pln,status,created_at,paid_at,activated_until,plans(name,monthly_search_limit)")
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.error("Błąd zamówień:", error);
+    showToast("Nie udało się pobrać zamówień.");
+    return;
+  }
+
+  state.orders = data || [];
+  renderMyOrders();
+}
+
+function renderMyOrders() {
+  const container = $("#myOrders");
+  const empty = $("#myOrdersEmpty");
+  if (!container || !empty) return;
+
+  if (!state.session || !state.orders.length) {
+    container.innerHTML = "";
+    empty.classList.remove("hidden");
+    return;
+  }
+
+  empty.classList.add("hidden");
+  container.innerHTML = state.orders.map(order => {
+    const planName = order.plans?.name || order.plan_code;
+    const limit = order.plans?.monthly_search_limit || "";
+    return `<article class="order-card">
+      <div>
+        <strong>${escapeHtml(order.order_code)}</strong>
+        <span>${escapeHtml(planName)}${limit ? ` · ${limit} wyszukiwań` : ""}</span>
+      </div>
+      <div class="order-card-side">
+        <strong>${formatPrice(order.amount_pln)}</strong>
+        <span class="order-status ${escapeAttr(order.status)}">${orderStatusLabel(order.status)}</span>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+async function createPlanOrder(planCode) {
+  if (!state.session) {
+    plansDialog.close();
+    openAuthDialog();
+    return;
+  }
+
+  const button = document.querySelector(`[data-plan-code="${CSS.escape(planCode)}"]`);
+  if (button) button.disabled = true;
+
+  try {
+    const { data, error } = await supabaseClient.rpc("create_my_order", {
+      p_plan_code: planCode
+    });
+
+    if (error) throw error;
+
+    state.currentOrder = Array.isArray(data) ? data[0] : data;
+    await loadPaymentSettings();
+    await loadMyOrders();
+    plansDialog.close();
+    renderPaymentDialog();
+    paymentDialog.showModal();
+  } catch (error) {
+    console.error("Błąd zamówienia:", error);
+    showToast("Nie udało się utworzyć zamówienia.");
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function renderPaymentDialog() {
+  const order = state.currentOrder;
+  const settings = state.paymentSettings || {};
+  if (!order) return;
+
+  const account = formatBankAccount(settings.bank_account || "");
+  const hasAccount = Boolean(account);
+  $("#paymentDialogTitle").textContent = `${order.plan_name} — ${order.monthly_search_limit} wyszukiwań`;
+
+  $("#paymentInstructions").innerHTML = `
+    <div class="payment-row"><span>Kwota</span><strong>${formatPrice(order.amount_pln)}</strong></div>
+    <div class="payment-row"><span>Tytuł przelewu</span><strong>${escapeHtml(order.order_code)}</strong></div>
+    <div class="payment-row"><span>Odbiorca</span><strong>${escapeHtml(settings.seller_name || "Do uzupełnienia przez administratora")}</strong></div>
+    <div class="payment-row"><span>Numer konta</span><strong>${hasAccount ? escapeHtml(account) : "Nie skonfigurowano"}</strong></div>
+    ${settings.bank_name ? `<div class="payment-row"><span>Bank</span><strong>${escapeHtml(settings.bank_name)}</strong></div>` : ""}
+    ${!hasAccount ? `<div class="payment-warning">Numer konta nie został jeszcze dodany. Skontaktuj się: <a href="mailto:${escapeAttr(settings.payment_email || "logo.wizytowka@gmail.com")}">${escapeHtml(settings.payment_email || "logo.wizytowka@gmail.com")}</a></div>` : ""}
+    ${settings.instructions ? `<div class="payment-note">${escapeHtml(settings.instructions)}</div>` : ""}
+  `;
+}
+
+async function copyPaymentDetails() {
+  const order = state.currentOrder;
+  const settings = state.paymentSettings || {};
+  if (!order) return;
+
+  const text = [
+    `Pakiet: ${order.plan_name} (${order.monthly_search_limit} wyszukiwań)`,
+    `Kwota: ${formatPrice(order.amount_pln)}`,
+    `Odbiorca: ${settings.seller_name || "nie skonfigurowano"}`,
+    `Numer konta: ${formatBankAccount(settings.bank_account || "") || "nie skonfigurowano"}`,
+    `Tytuł przelewu: ${order.order_code}`
+  ].join("\n");
+
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("Dane do przelewu skopiowane.");
+  } catch {
+    showToast("Nie udało się skopiować danych.");
+  }
+}
+
+async function openAdminDialog() {
+  if (!state.profile?.is_admin) {
+    showToast("Brak uprawnień administratora.");
+    return;
+  }
+
+  await loadPaymentSettings();
+  fillPaymentSettingsForm();
+  await loadAdminOrders();
+  adminDialog.showModal();
+}
+
+function fillPaymentSettingsForm() {
+  const settings = state.paymentSettings || {};
+  $("#settingSellerName").value = settings.seller_name || "";
+  $("#settingBankAccount").value = settings.bank_account || "";
+  $("#settingBankName").value = settings.bank_name || "";
+  $("#settingPaymentEmail").value = settings.payment_email || "logo.wizytowka@gmail.com";
+  $("#settingInstructions").value = settings.instructions || "";
+}
+
+async function savePaymentSettings(event) {
+  event.preventDefault();
+
+  const { data, error } = await supabaseClient.rpc("admin_save_payment_settings", {
+    p_seller_name: $("#settingSellerName").value.trim(),
+    p_bank_account: $("#settingBankAccount").value.replace(/\s+/g, ""),
+    p_bank_name: $("#settingBankName").value.trim(),
+    p_payment_email: $("#settingPaymentEmail").value.trim(),
+    p_instructions: $("#settingInstructions").value.trim()
+  });
+
+  if (error) {
+    console.error(error);
+    showToast("Nie udało się zapisać danych płatności.");
+    return;
+  }
+
+  state.paymentSettings = Array.isArray(data) ? data[0] : data;
+  showToast("Dane płatności zapisane.");
+}
+
+async function loadAdminOrders() {
+  if (!state.profile?.is_admin) return;
+
+  const { data, error } = await supabaseClient.rpc("admin_list_orders", {
+    p_status: "pending"
+  });
+
+  if (error) {
+    console.error("Błąd zamówień administratora:", error);
+    showToast("Nie udało się pobrać zamówień.");
+    return;
+  }
+
+  state.adminOrders = data || [];
+  renderAdminOrders();
+}
+
+function renderAdminOrders() {
+  const container = $("#adminOrders");
+  const empty = $("#adminOrdersEmpty");
+
+  if (!state.adminOrders.length) {
+    container.innerHTML = "";
+    empty.classList.remove("hidden");
+    return;
+  }
+
+  empty.classList.add("hidden");
+  container.innerHTML = state.adminOrders.map(order => `
+    <article class="admin-order-card">
+      <div class="admin-order-main">
+        <strong>${escapeHtml(order.order_code)}</strong>
+        <span>${escapeHtml(order.user_email || "brak e-maila")}</span>
+        <span>${escapeHtml(order.plan_name)} · ${order.monthly_search_limit} wyszukiwań · ${formatPrice(order.amount_pln)}</span>
+        <small>${new Date(order.created_at).toLocaleString("pl-PL")}</small>
+      </div>
+      <div class="admin-order-actions">
+        <button class="approve-order" data-order-id="${escapeAttr(order.order_id)}" type="button">Potwierdź wpłatę</button>
+        <button class="reject-order" data-order-id="${escapeAttr(order.order_id)}" type="button">Odrzuć</button>
+      </div>
+    </article>
+  `).join("");
+
+  container.querySelectorAll(".approve-order").forEach(button => {
+    button.addEventListener("click", () => approveOrder(button.dataset.orderId));
+  });
+  container.querySelectorAll(".reject-order").forEach(button => {
+    button.addEventListener("click", () => rejectOrder(button.dataset.orderId));
+  });
+}
+
+async function approveOrder(orderId) {
+  if (!confirm("Potwierdzić wpłatę i aktywować pakiet na 30 dni?")) return;
+
+  const { error } = await supabaseClient.rpc("admin_approve_order", {
+    p_order_id: orderId
+  });
+
+  if (error) {
+    console.error(error);
+    showToast("Nie udało się aktywować pakietu.");
+    return;
+  }
+
+  showToast("Wpłata potwierdzona. Pakiet został aktywowany.");
+  await loadAdminOrders();
+}
+
+async function rejectOrder(orderId) {
+  if (!confirm("Odrzucić to zamówienie?")) return;
+
+  const { error } = await supabaseClient.rpc("admin_reject_order", {
+    p_order_id: orderId
+  });
+
+  if (error) {
+    console.error(error);
+    showToast("Nie udało się odrzucić zamówienia.");
+    return;
+  }
+
+  showToast("Zamówienie odrzucone.");
+  await loadAdminOrders();
+}
+
+function orderStatusLabel(status) {
+  const labels = {
+    pending: "Oczekuje na wpłatę",
+    paid: "Opłacone — aktywne",
+    rejected: "Odrzucone",
+    cancelled: "Anulowane",
+    expired: "Wygasłe"
+  };
+  return labels[status] || status;
+}
+
+function formatPrice(value) {
+  return `${Number(value || 0).toFixed(2).replace(".", ",")} zł`;
+}
+
+function formatBankAccount(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  const first = digits.slice(0, 2);
+  const rest = digits.slice(2).match(/.{1,4}/g) || [];
+  return [first, ...rest].filter(Boolean).join(" ");
 }
 
 async function loadQuota() {
@@ -1103,8 +1435,15 @@ function switchView(viewId) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function openPlansDialog() {
+async function openPlansDialog() {
+  if (!state.session) {
+    openAuthDialog();
+    return;
+  }
+  await loadMyOrders();
+  await loadPaymentSettings();
   renderQuota();
+  renderMyOrders();
   plansDialog.showModal();
 }
 
