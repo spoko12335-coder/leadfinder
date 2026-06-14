@@ -41,7 +41,17 @@ const categoryQueries = {
   builder: ['nwr["craft"="builder"]', 'nwr["craft"="construction"]'],
   photographer: ['nwr["craft"="photographer"]', 'nwr["shop"="photo"]'],
   physiotherapist: ['nwr["healthcare"="physiotherapist"]'],
-  restaurant: ['nwr["amenity"="restaurant"]']
+  restaurant: ['nwr["amenity"="restaurant"]'],
+  cafe: ['nwr["amenity"="cafe"]'],
+  bakery: ['nwr["shop"="bakery"]'],
+  florist: ['nwr["shop"="florist"]'],
+  hotel: [
+    'nwr["tourism"="hotel"]',
+    'nwr["tourism"="guest_house"]'
+  ],
+  accountant: ['nwr["office"="accountant"]'],
+  real_estate: ['nwr["office"="estate_agent"]'],
+  retail: ['nwr["shop"]']
 };
 
 const categoryFallbackQueries = {
@@ -103,6 +113,37 @@ const categoryFallbackQueries = {
   restaurant: [
     'nwr["amenity"="fast_food"]',
     'nwr["amenity"="food_court"]'
+  ],
+  cafe: [
+    'nwr["name"~"kawiarn|cafe|coffee",i]["amenity"]',
+    'nwr["name"~"kawiarn|cafe|coffee",i]["phone"]'
+  ],
+  bakery: [
+    'nwr["name"~"piekarni|cukierni|bakery",i]["shop"]',
+    'nwr["name"~"piekarni|cukierni|bakery",i]["phone"]'
+  ],
+  florist: [
+    'nwr["name"~"kwiaciar|floryst",i]["shop"]',
+    'nwr["name"~"kwiaciar|floryst",i]["phone"]'
+  ],
+  hotel: [
+    'nwr["name"~"hotel|pensjonat|nocleg",i]["tourism"]',
+    'nwr["name"~"hotel|pensjonat|nocleg",i]["phone"]'
+  ],
+  accountant: [
+    'nwr["office"="company"]["name"~"księg|ksieg|rachunk",i]',
+    'nwr["name"~"księg|ksieg|rachunk",i]["phone"]',
+    'nwr["name"~"księg|ksieg|rachunk",i]["contact:phone"]'
+  ],
+  real_estate: [
+    'nwr["office"="company"]["name"~"nieruchomo|estate",i]',
+    'nwr["name"~"nieruchomo|estate",i]["phone"]',
+    'nwr["name"~"nieruchomo|estate",i]["contact:phone"]'
+  ],
+  retail: [
+    'nwr["shop"]["phone"]',
+    'nwr["shop"]["contact:phone"]',
+    'nwr["shop"]["website"]'
   ]
 };
 
@@ -116,7 +157,14 @@ const categorySearchPhrases = {
   builder: "firma budowlana remonty",
   photographer: "fotograf",
   physiotherapist: "fizjoterapeuta rehabilitacja",
-  restaurant: "restauracja"
+  restaurant: "restauracja",
+  cafe: "kawiarnia",
+  bakery: "piekarnia cukiernia",
+  florist: "kwiaciarnia",
+  hotel: "hotel pensjonat noclegi",
+  accountant: "biuro rachunkowe księgowość",
+  real_estate: "biuro nieruchomości",
+  retail: "sklep"
 };
 
 const categoryLabels = {
@@ -129,7 +177,15 @@ const categoryLabels = {
   builder: "firma budowlana",
   photographer: "fotograf",
   physiotherapist: "gabinet fizjoterapii",
-  restaurant: "restauracja"
+  restaurant: "restauracja",
+  cafe: "kawiarnia",
+  bakery: "piekarnia lub cukiernia",
+  florist: "kwiaciarnia",
+  hotel: "hotel lub obiekt noclegowy",
+  accountant: "biuro rachunkowe",
+  real_estate: "biuro nieruchomości",
+  retail: "sklep",
+  custom: "własna branża"
 };
 
 const $ = selector => document.querySelector(selector);
@@ -154,6 +210,10 @@ initApp();
 
 function bindEvents() {
   searchForm.addEventListener("submit", handleSearch);
+  $$('input[name="searchPurpose"]').forEach(input =>
+    input.addEventListener("change", handlePurposeChange)
+  );
+  $("#category").addEventListener("change", handleCategoryChange);
   $("#onlyNoWebsite").addEventListener("change", renderResults);
   $("#hideUnnamed").addEventListener("change", renderResults);
   $("#onlyContact").addEventListener("change", renderResults);
@@ -246,6 +306,9 @@ function bindEvents() {
       navigator.serviceWorker.register("./sw.js")
     );
   }
+
+  handlePurposeChange();
+  handleCategoryChange();
 }
 
 async function initApp() {
@@ -849,6 +912,77 @@ async function failSearch(requestId) {
   await loadQuota();
 }
 
+function getSearchPurpose() {
+  return document.querySelector('input[name="searchPurpose"]:checked')?.value
+    || "website";
+}
+
+function handlePurposeChange() {
+  const purpose = getSearchPurpose();
+  const salesMode = purpose === "sales";
+
+  $("#salesOfferFields").classList.toggle("hidden", !salesMode);
+  $("#offerName").required = salesMode;
+  $("#onlyNoWebsite").checked = !salesMode;
+  $("#onlyContact").checked = salesMode;
+  $("#purposeHint").textContent = salesMode
+    ? "Znajdziemy firmy, do których możesz kierować ofertę produktu lub usługi. Firmy mogą posiadać własną stronę WWW."
+    : "Znajdziemy firmy, które w danych OpenStreetMap nie mają podanej własnej strony internetowej.";
+
+  resultsSection.classList.add("hidden");
+  emptyState.classList.add("hidden");
+}
+
+function handleCategoryChange() {
+  const custom = $("#category").value === "custom";
+  $("#customCategoryField").classList.toggle("hidden", !custom);
+  $("#customCategory").required = custom;
+}
+
+function getCategoryDefinition(category, customCategory) {
+  if (category !== "custom") {
+    return {
+      key: category,
+      label: categoryLabels[category] || category,
+      exactSelectors: categoryQueries[category] || [],
+      fallbackSelectors: categoryFallbackQueries[category] || [],
+      searchPhrase: categorySearchPhrases[category] || categoryLabels[category] || category
+    };
+  }
+
+  const label = clean(customCategory);
+  const regex = buildSafeOverpassRegex(label);
+
+  return {
+    key: "custom",
+    label,
+    exactSelectors: [],
+    fallbackSelectors: regex
+      ? [
+          `nwr["shop"]["name"~"${regex}",i]`,
+          `nwr["office"]["name"~"${regex}",i]`,
+          `nwr["craft"]["name"~"${regex}",i]`,
+          `nwr["amenity"]["name"~"${regex}",i]`,
+          `nwr["tourism"]["name"~"${regex}",i]`,
+          `nwr["healthcare"]["name"~"${regex}",i]`,
+          `nwr["name"~"${regex}",i]["phone"]`,
+          `nwr["name"~"${regex}",i]["contact:phone"]`
+        ]
+      : [],
+    searchPhrase: label
+  };
+}
+
+function buildSafeOverpassRegex(value) {
+  const words = clean(value)
+    .split(/\s+/)
+    .map(word => word.replace(/[.*+?^${}()|[\]\\"]/g, "\\$&"))
+    .filter(word => word.length >= 2)
+    .slice(0, 5);
+
+  return words.join("|");
+}
+
 async function handleSearch(event) {
   event.preventDefault();
   clearMessages();
@@ -860,8 +994,25 @@ async function handleSearch(event) {
 
   const city = $("#city").value.trim();
   const category = $("#category").value;
+  const customCategory = $("#customCategory").value.trim();
   const radius = Number($("#radius").value);
+  const purpose = getSearchPurpose();
+  const offerName = $("#offerName").value.trim();
+  const offerBenefit = $("#offerBenefit").value.trim();
+  const categoryDefinition = getCategoryDefinition(category, customCategory);
   const requestId = createRequestId();
+
+  if (category === "custom" && !categoryDefinition.label) {
+    errorBox.textContent = "Wpisz branżę firm, których szukasz.";
+    errorBox.classList.remove("hidden");
+    return;
+  }
+
+  if (purpose === "sales" && !offerName) {
+    errorBox.textContent = "Wpisz produkt lub usługę, którą chcesz zaoferować.";
+    errorBox.classList.remove("hidden");
+    return;
+  }
   let reserved = false;
 
   $("#emptyState h3").textContent = "Brak wyników";
@@ -871,7 +1022,12 @@ async function handleSearch(event) {
 
   try {
     setLoadingStage("Sprawdzam limit…");
-    await reserveSearch(requestId, city, category, radius);
+    await reserveSearch(
+      requestId,
+      city,
+      category === "custom" ? `custom:${categoryDefinition.label}` : category,
+      radius
+    );
     reserved = true;
 
     const location = await geocodeCity(city);
@@ -879,18 +1035,49 @@ async function handleSearch(event) {
       location.lat,
       location.lon,
       radius,
-      category,
+      categoryDefinition,
       city
     );
 
-    state.results = normalizeBusinesses(elements, category, city)
-      .slice(0, MAX_RESULTS_PER_SEARCH);
-    state.lastSearch = { city, category, radius, location };
-    $("#resultsTitle").textContent = `${categoryLabels[category]} — ${city}`;
+    state.results = normalizeBusinesses(
+      elements,
+      categoryDefinition,
+      city,
+      purpose,
+      offerName,
+      offerBenefit
+    ).slice(0, MAX_RESULTS_PER_SEARCH);
 
-    const usableLeadCount = state.results.filter(company =>
-      company.hasRealName && !company.hasWebsite
-    ).length;
+    state.lastSearch = {
+      city,
+      category,
+      categoryLabel: categoryDefinition.label,
+      radius,
+      purpose,
+      offerName,
+      offerBenefit,
+      location
+    };
+
+    $("#resultsTitle").textContent = purpose === "sales"
+      ? `Firmy do oferty: ${categoryDefinition.label} — ${city}`
+      : `Firmy bez WWW: ${categoryDefinition.label} — ${city}`;
+
+    const usableLeadCount = state.results.filter(company => {
+      if (!company.hasRealName) return false;
+
+      if (purpose === "website") {
+        return !company.hasWebsite;
+      }
+
+      return Boolean(
+        company.phone ||
+        company.email ||
+        company.facebook ||
+        company.instagram ||
+        company.website
+      );
+    }).length;
 
     if (usableLeadCount === 0) {
       await failSearch(requestId);
@@ -982,21 +1169,21 @@ async function geocodeCity(city) {
   }
 }
 
-async function fetchBusinesses(lat, lon, radius, category, city) {
+async function fetchBusinesses(lat, lon, radius, categoryDefinition, city) {
   setLoadingStage("Pobieram firmy…");
 
   const exactElements = await fetchOverpassSelectors(
     lat,
     lon,
     radius,
-    categoryQueries[category],
+    categoryDefinition.exactSelectors,
     "Pobieram firmy…"
   );
 
   let combined = [...exactElements];
 
   if (combined.length < 20) {
-    const fallbackSelectors = categoryFallbackQueries[category] || [];
+    const fallbackSelectors = categoryDefinition.fallbackSelectors || [];
 
     if (fallbackSelectors.length) {
       setLoadingStage("Poszerzam wyszukiwanie…");
@@ -1022,7 +1209,7 @@ async function fetchBusinesses(lat, lon, radius, category, city) {
     try {
       const nominatimElements = await fetchNominatimBusinesses(
         city,
-        category
+        categoryDefinition.searchPhrase
       );
       combined.push(...nominatimElements);
     } catch (error) {
@@ -1098,8 +1285,8 @@ out center 100;`;
   throw lastError;
 }
 
-async function fetchNominatimBusinesses(city, category) {
-  const phrase = categorySearchPhrases[category] || categoryLabels[category];
+async function fetchNominatimBusinesses(city, searchPhrase) {
+  const phrase = clean(searchPhrase);
   const params = new URLSearchParams({
     q: `${phrase}, ${city}, Polska`,
     format: "jsonv2",
@@ -1166,7 +1353,14 @@ async function fetchNominatimBusinesses(city, category) {
   }
 }
 
-function normalizeBusinesses(elements, category, city) {
+function normalizeBusinesses(
+  elements,
+  categoryDefinition,
+  city,
+  purpose,
+  offerName,
+  offerBenefit
+) {
   const seenIds = new Set();
   const seenCompanies = new Set();
 
@@ -1195,7 +1389,7 @@ function normalizeBusinesses(elements, category, city) {
       const openingHours = clean(tags.opening_hours || "");
       const descriptionData = buildBusinessDescription({
         tags,
-        category,
+        categoryLabel: categoryDefinition.label,
         city,
         address,
         phone,
@@ -1212,8 +1406,12 @@ function normalizeBusinesses(elements, category, city) {
         osmId: element.id,
         name,
         hasRealName: Boolean(rawName),
-        category,
-        categoryLabel: categoryLabels[category],
+        category: categoryDefinition.key,
+        categoryLabel: categoryDefinition.label,
+        targetIndustry: categoryDefinition.label,
+        leadPurpose: purpose,
+        offerName,
+        offerBenefit,
         lat,
         lon,
         address,
@@ -1230,7 +1428,7 @@ function normalizeBusinesses(elements, category, city) {
         createdAt: new Date().toISOString()
       };
 
-      company.leadScore = calculateLeadScore(company);
+      company.leadScore = calculateLeadScore(company, purpose);
       company.leadQuality = leadQuality(company.leadScore);
 
       return company;
@@ -1250,16 +1448,25 @@ function normalizeBusinesses(elements, category, city) {
       seenCompanies.add(businessKey);
       return true;
     })
-    .sort((a, b) =>
-      Number(a.hasWebsite) - Number(b.hasWebsite) ||
-      b.leadScore - a.leadScore ||
-      a.name.localeCompare(b.name, "pl")
-    );
+    .sort((a, b) => {
+      if (purpose === "sales") {
+        return (
+          b.leadScore - a.leadScore ||
+          a.name.localeCompare(b.name, "pl")
+        );
+      }
+
+      return (
+        Number(a.hasWebsite) - Number(b.hasWebsite) ||
+        b.leadScore - a.leadScore ||
+        a.name.localeCompare(b.name, "pl")
+      );
+    });
 }
 
 function buildBusinessDescription({
   tags,
-  category,
+  categoryLabel,
   city,
   address,
   phone,
@@ -1282,9 +1489,9 @@ function buildBusinessDescription({
     };
   }
 
-  const categoryLabel = categoryLabels[category] || "firma usługowa";
+  const resolvedCategoryLabel = categoryLabel || "firma usługowa";
   const sentences = [
-    `${capitalizeFirst(categoryLabel)} w miejscowości ${city}.`
+    `${capitalizeFirst(resolvedCategoryLabel)} w miejscowości ${city}.`
   ];
 
   const serviceText = extractServiceDescription(tags);
@@ -1369,16 +1576,30 @@ function truncateText(value, maxLength) {
   return `${text.slice(0, maxLength - 1).trim()}…`;
 }
 
-function calculateLeadScore(company) {
+function calculateLeadScore(company, purpose = company.leadPurpose || "website") {
   let score = 0;
-  if (!company.hasWebsite) score += 25;
-  if (company.hasRealName) score += 15;
-  if (company.phone) score += 30;
-  if (company.email) score += 15;
-  if (company.facebook || company.instagram) score += 20;
-  if (company.address && company.address !== "Adres niepodany w danych") {
-    score += 10;
+
+  if (purpose === "sales") {
+    if (company.hasRealName) score += 15;
+    if (company.phone) score += 35;
+    if (company.email) score += 20;
+    if (company.facebook || company.instagram) score += 15;
+    if (company.website) score += 10;
+    if (company.address && company.address !== "Adres niepodany w danych") {
+      score += 5;
+    }
+    if (company.openingHours) score += 5;
+  } else {
+    if (!company.hasWebsite) score += 25;
+    if (company.hasRealName) score += 15;
+    if (company.phone) score += 30;
+    if (company.email) score += 15;
+    if (company.facebook || company.instagram) score += 20;
+    if (company.address && company.address !== "Adres niepodany w danych") {
+      score += 10;
+    }
   }
+
   return Math.min(score, 100);
 }
 
@@ -1556,6 +1777,10 @@ function companyCard(company, source) {
   const quality = company.leadQuality ||
     leadQuality(company.leadScore || calculateLeadScore(company));
 
+  const purposeBadge = company.leadPurpose === "sales"
+    ? `<span class="purpose-badge sales-purpose">OFERTA B2B</span>`
+    : `<span class="purpose-badge website-purpose">BEZ WWW</span>`;
+
   const socials = [
     company.facebook
       ? `<a href="${escapeAttr(company.facebook)}" target="_blank" rel="noopener">Facebook</a>`
@@ -1572,6 +1797,7 @@ function companyCard(company, source) {
         <p class="address">${escapeHtml(company.address)}</p>
       </div>
       <div class="badge-stack">
+        ${purposeBadge}
         ${siteBadge}
         <span class="quality-badge ${quality.className}">
           ${quality.label} · ${company.leadScore || 0}/100
@@ -1721,6 +1947,10 @@ function companyToDatabaseRow(company) {
     description: company.description || null,
     description_source: company.descriptionSource || "generated",
     opening_hours: company.openingHours || null,
+    lead_purpose: company.leadPurpose || "website",
+    offer_name: company.offerName || null,
+    offer_benefit: company.offerBenefit || null,
+    target_industry: company.targetIndustry || company.categoryLabel || null,
     latitude: company.lat || null,
     longitude: company.lon || null,
     source: "openstreetmap",
@@ -1746,6 +1976,13 @@ function databaseRowToCompany(row) {
     description: row.description || buildSavedBusinessDescription(row),
     descriptionSource: row.description_source || "generated",
     openingHours: row.opening_hours || "",
+    leadPurpose: row.lead_purpose || "website",
+    offerName: row.offer_name || "",
+    offerBenefit: row.offer_benefit || "",
+    targetIndustry: row.target_industry ||
+      categoryLabels[row.category] ||
+      row.category ||
+      "firma",
     lat: row.latitude,
     lon: row.longitude,
     hasWebsite: Boolean(row.website),
@@ -1781,19 +2018,49 @@ function findCompany(id, source) {
 }
 
 function openMessage(company) {
-  const message = `Dzień dobry,
+  const senderName = clean(
+    state.profile?.full_name ||
+    state.session?.user?.user_metadata?.full_name ||
+    ""
+  );
+  const senderEmail = clean(
+    state.profile?.email ||
+    state.session?.user?.email ||
+    ""
+  );
+
+  const signature = [
+    "Pozdrawiam",
+    senderName,
+    senderEmail ? `E-mail: ${senderEmail}` : ""
+  ].filter(Boolean).join("\n");
+
+  let message;
+
+  if (company.leadPurpose === "sales") {
+    const offerName = clean(company.offerName) || "naszej oferty";
+    const benefit = clean(company.offerBenefit);
+
+    message = `Dzień dobry,
+
+trafiłem na firmę „${company.name}” działającą w branży: ${company.targetIndustry || company.categoryLabel}.
+
+Chciałbym przedstawić Państwu ofertę dotyczącą: ${offerName}.${benefit ? `\n\n${benefit}` : ""}
+
+Czy mogę przesłać krótką ofertę albo ustalić, czy takie rozwiązanie może być przydatne w Państwa firmie?
+
+${signature}`;
+  } else {
+    message = `Dzień dobry,
 
 trafiłem na profil firmy „${company.name}” działającej w branży: ${company.categoryLabel}. Nie znalazłem obecnie własnej strony internetowej firmy.
 
 Mogę przygotować nowoczesną stronę z opisem usług, galerią realizacji, danymi kontaktowymi, lokalizacją oraz szybkim kontaktem telefonicznym. Strona będzie dostosowana do telefonów i może pomóc klientom znaleźć firmę w Google.
 
-Koszt wykonania strony wynosi 899 zł plus opłaty za domenę i serwer. Mogę wcześniej bezpłatnie przygotować propozycję wyglądu strony głównej.
+Czy mogę przesłać krótką propozycję wyglądu strony oraz wycenę?
 
-Czy mogę ją przesłać?
-
-Pozdrawiam
-Kamil Mazur
-E-mail: logo.wizytowka@gmail.com`;
+${signature}`;
+  }
 
   $("#messageCompany").textContent = company.name;
   $("#messageText").value = message;
@@ -1844,13 +2111,17 @@ function exportCsv(list, filename) {
   }
 
   const headers = [
-    "Nazwa", "Branża", "Adres", "Telefon", "E-mail", "Strona",
+    "Nazwa", "Branża", "Cel wyszukiwania", "Oferta", "Korzyść",
+    "Adres", "Telefon", "E-mail", "Strona",
     "Facebook", "Instagram", "Status", "Mapa"
   ];
 
   const rows = list.map(company => [
     company.name,
-    company.categoryLabel,
+    company.targetIndustry || company.categoryLabel,
+    company.leadPurpose === "sales" ? "Sprzedaż B2B" : "Firma bez WWW",
+    company.offerName || "",
+    company.offerBenefit || "",
     company.address,
     company.phone,
     company.email,

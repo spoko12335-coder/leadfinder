@@ -64,6 +64,30 @@
           </div>
 
           <form id="searchForm">
+            <fieldset class="purpose-fieldset">
+              <legend>Cel wyszukiwania</legend>
+
+              <div class="purpose-grid">
+                <label class="purpose-option">
+                  <input type="radio" name="searchPurpose" value="website" checked />
+                  <span>
+                    <strong>Klienci bez strony WWW</strong>
+                    <small>Sprzedaż stron internetowych i usług online</small>
+                  </span>
+                </label>
+
+                <label class="purpose-option">
+                  <input type="radio" name="searchPurpose" value="sales" />
+                  <span>
+                    <strong>Sprzedaż produktu lub usługi</strong>
+                    <small>Firmy do dowolnej oferty B2B</small>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+
+            <p id="purposeHint" class="mode-hint"></p>
+
             <label>
               Miasto
               <input id="city" name="city" type="text" placeholder="np. Grudziądz" value="Grudziądz" required />
@@ -71,7 +95,7 @@
 
             <div class="grid-2">
               <label>
-                Branża
+                Branża firm, których szukasz
                 <select id="category" name="category">
                   <option value="hairdresser">Salon fryzjerski</option>
                   <option value="beauty">Salon kosmetyczny</option>
@@ -83,6 +107,14 @@
                   <option value="photographer">Fotograf</option>
                   <option value="physiotherapist">Fizjoterapeuta</option>
                   <option value="restaurant">Restauracja</option>
+                  <option value="cafe">Kawiarnia</option>
+                  <option value="bakery">Piekarnia / cukiernia</option>
+                  <option value="florist">Kwiaciarnia</option>
+                  <option value="hotel">Hotel / noclegi</option>
+                  <option value="accountant">Biuro rachunkowe</option>
+                  <option value="real_estate">Biuro nieruchomości</option>
+                  <option value="retail">Sklepy</option>
+                  <option value="custom">Inna branża — wpisz własną</option>
                 </select>
               </label>
 
@@ -98,6 +130,38 @@
               </label>
             </div>
 
+            <label id="customCategoryField" class="hidden">
+              Własna branża odbiorców
+              <input
+                id="customCategory"
+                type="text"
+                maxlength="80"
+                placeholder="np. hurtownie budowlane, gabinety stomatologiczne"
+              />
+            </label>
+
+            <div id="salesOfferFields" class="sales-offer-fields hidden">
+              <label>
+                Co chcesz sprzedać?
+                <input
+                  id="offerName"
+                  type="text"
+                  maxlength="160"
+                  placeholder="np. kawę dla biur, kosmetyki, terminale płatnicze"
+                />
+              </label>
+
+              <label>
+                Najważniejsza korzyść lub krótka treść oferty
+                <textarea
+                  id="offerBenefit"
+                  rows="3"
+                  maxlength="500"
+                  placeholder="np. Bezpłatna próbka, dostawa w 24 godziny i rabat dla nowych klientów."
+                ></textarea>
+              </label>
+            </div>
+
             <button id="searchBtn" class="primary" type="submit">
               <span class="btn-label">Zaloguj się, aby szukać</span>
               <span class="spinner hidden" aria-hidden="true"></span>
@@ -106,7 +170,7 @@
 
           <p class="hint">
             Jedno wyszukiwanie zwraca maksymalnie 10 najlepiej ocenionych, unikalnych firm.
-            Aplikacja sprawdza dokładne oznaczenia branży oraz dodatkowe wpisy tekstowe OpenStreetMap.
+            Możesz szukać klientów bez strony WWW albo firm do dowolnej oferty B2B.
             Wyszukiwanie bez żadnego użytecznego leada nie zmniejsza limitu.
           </p>
         </div>
@@ -188,7 +252,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 5.2</p>
+          <p class="eyebrow">WERSJA 5.3</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -199,6 +263,8 @@
             <div><strong>✓</strong><span>Licznik wykorzystanych i pozostałych wyszukiwań</span></div>
             <div><strong>✓</strong><span>Automatyczne odnowienie limitu na początku miesiąca</span></div>
             <div><strong>✓</strong><span>Leady zapisywane na koncie użytkownika</span></div>
+            <div><strong>✓</strong><span>Dwa tryby: firmy bez WWW oraz dowolna sprzedaż B2B</span></div>
+            <div><strong>✓</strong><span>Własna branża odbiorców i spersonalizowana oferta</span></div>
             <div><strong>✓</strong><span>Maksymalnie 10 unikalnych firm na jedno wyszukiwanie</span></div>
             <div><strong>✓</strong><span>Opis firmy i godziny otwarcia, gdy dane są dostępne</span></div>
             <div><strong>✓</strong><span>Pakiety 25, 50, 100, 200, 500 i 1000 wyszukiwań</span></div>
