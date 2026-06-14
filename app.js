@@ -44,6 +44,81 @@ const categoryQueries = {
   restaurant: ['nwr["amenity"="restaurant"]']
 };
 
+const categoryFallbackQueries = {
+  hairdresser: [
+    'nwr["shop"]["name"~"fryzjer|barber|hair",i]',
+    'nwr["craft"]["name"~"fryzjer|barber|hair",i]',
+    'nwr["name"~"fryzjer|barber|hair",i]["phone"]',
+    'nwr["name"~"fryzjer|barber|hair",i]["contact:phone"]'
+  ],
+  beauty: [
+    'nwr["shop"]["name"~"kosmet|beauty|urod",i]',
+    'nwr["office"="company"]["name"~"kosmet|beauty|urod",i]',
+    'nwr["name"~"kosmet|beauty|urod",i]["phone"]',
+    'nwr["name"~"kosmet|beauty|urod",i]["contact:phone"]'
+  ],
+  nails: [
+    'nwr["shop"]["name"~"paznok|manicure|nail",i]',
+    'nwr["office"="company"]["name"~"paznok|manicure|nail",i]',
+    'nwr["name"~"paznok|manicure|nail",i]["phone"]',
+    'nwr["name"~"paznok|manicure|nail",i]["contact:phone"]'
+  ],
+  car_repair: [
+    'nwr["shop"]["name"~"mechanik|warsztat|auto.?serwis|wulkaniz",i]',
+    'nwr["craft"]["name"~"mechanik|warsztat|auto.?serwis|wulkaniz",i]',
+    'nwr["name"~"mechanik|warsztat|auto.?serwis|wulkaniz",i]["phone"]',
+    'nwr["name"~"mechanik|warsztat|auto.?serwis|wulkaniz",i]["contact:phone"]'
+  ],
+  plumber: [
+    'nwr["craft"="heating_engineer"]',
+    'nwr["office"="company"]["name"~"hydraul|wod.?kan|sanitar|instalacj|ogrzew",i]',
+    'nwr["craft"]["name"~"hydraul|wod.?kan|sanitar|instalacj|ogrzew",i]',
+    'nwr["name"~"hydraul|wod.?kan|sanitar|instalacj|ogrzew",i]["phone"]',
+    'nwr["name"~"hydraul|wod.?kan|sanitar|instalacj|ogrzew",i]["contact:phone"]'
+  ],
+  electrician: [
+    'nwr["office"="company"]["name"~"elektryk|elektr|instalacj.*elektr",i]',
+    'nwr["craft"]["name"~"elektryk|elektr|instalacj.*elektr",i]',
+    'nwr["name"~"elektryk|elektr|instalacj.*elektr",i]["phone"]',
+    'nwr["name"~"elektryk|elektr|instalacj.*elektr",i]["contact:phone"]'
+  ],
+  builder: [
+    'nwr["office"="company"]["name"~"budowl|remont|wykończe|wykoncze",i]',
+    'nwr["craft"]["name"~"budowl|remont|wykończe|wykoncze",i]',
+    'nwr["name"~"budowl|remont|wykończe|wykoncze",i]["phone"]',
+    'nwr["name"~"budowl|remont|wykończe|wykoncze",i]["contact:phone"]'
+  ],
+  photographer: [
+    'nwr["office"="company"]["name"~"fotograf|foto|photography",i]',
+    'nwr["craft"]["name"~"fotograf|foto|photography",i]',
+    'nwr["name"~"fotograf|foto|photography",i]["phone"]',
+    'nwr["name"~"fotograf|foto|photography",i]["contact:phone"]'
+  ],
+  physiotherapist: [
+    'nwr["healthcare"]["name"~"fizjo|rehabilit",i]',
+    'nwr["office"="company"]["name"~"fizjo|rehabilit",i]',
+    'nwr["name"~"fizjo|rehabilit",i]["phone"]',
+    'nwr["name"~"fizjo|rehabilit",i]["contact:phone"]'
+  ],
+  restaurant: [
+    'nwr["amenity"="fast_food"]',
+    'nwr["amenity"="food_court"]'
+  ]
+};
+
+const categorySearchPhrases = {
+  hairdresser: "fryzjer",
+  beauty: "salon kosmetyczny",
+  nails: "manicure paznokcie",
+  car_repair: "mechanik samochodowy warsztat",
+  plumber: "hydraulik instalacje sanitarne",
+  electrician: "elektryk instalacje elektryczne",
+  builder: "firma budowlana remonty",
+  photographer: "fotograf",
+  physiotherapist: "fizjoterapeuta rehabilitacja",
+  restaurant: "restauracja"
+};
+
 const categoryLabels = {
   hairdresser: "salon fryzjerski",
   beauty: "salon kosmetyczny",
@@ -789,6 +864,9 @@ async function handleSearch(event) {
   const requestId = createRequestId();
   let reserved = false;
 
+  $("#emptyState h3").textContent = "Brak wyników";
+  $("#emptyState p").textContent = "Zwiększ promień albo wybierz inną branżę.";
+
   setLoading(true);
 
   try {
@@ -801,18 +879,35 @@ async function handleSearch(event) {
       location.lat,
       location.lon,
       radius,
-      category
+      category,
+      city
     );
 
     state.results = normalizeBusinesses(elements, category, city)
       .slice(0, MAX_RESULTS_PER_SEARCH);
     state.lastSearch = { city, category, radius, location };
     $("#resultsTitle").textContent = `${categoryLabels[category]} — ${city}`;
-    resultsSection.classList.toggle("hidden", state.results.length === 0);
-    emptyState.classList.toggle("hidden", state.results.length !== 0);
+
+    const usableLeadCount = state.results.filter(company =>
+      company.hasRealName && !company.hasWebsite
+    ).length;
+
+    if (usableLeadCount === 0) {
+      await failSearch(requestId);
+      reserved = false;
+      resultsSection.classList.add("hidden");
+      emptyState.classList.remove("hidden");
+      $("#emptyState h3").textContent = "Brak firm w darmowym źródle";
+      $("#emptyState p").textContent =
+        "To wyszukiwanie nie zostało odjęte z Twojego pakietu. Zwiększ promień albo wybierz inną branżę.";
+      return;
+    }
+
+    resultsSection.classList.remove("hidden");
+    emptyState.classList.add("hidden");
     renderResults();
 
-    await completeSearch(requestId, "openstreetmap", state.results.length);
+    await completeSearch(requestId, "openstreetmap", usableLeadCount);
   } catch (error) {
     console.error(error);
 
@@ -887,19 +982,75 @@ async function geocodeCity(city) {
   }
 }
 
-async function fetchBusinesses(lat, lon, radius, category) {
+async function fetchBusinesses(lat, lon, radius, category, city) {
   setLoadingStage("Pobieram firmy…");
 
-  const selectors = categoryQueries[category];
+  const exactElements = await fetchOverpassSelectors(
+    lat,
+    lon,
+    radius,
+    categoryQueries[category],
+    "Pobieram firmy…"
+  );
+
+  let combined = [...exactElements];
+
+  if (combined.length < 20) {
+    const fallbackSelectors = categoryFallbackQueries[category] || [];
+
+    if (fallbackSelectors.length) {
+      setLoadingStage("Poszerzam wyszukiwanie…");
+
+      try {
+        const fallbackElements = await fetchOverpassSelectors(
+          lat,
+          lon,
+          radius,
+          fallbackSelectors,
+          "Poszerzam wyszukiwanie…"
+        );
+        combined.push(...fallbackElements);
+      } catch (error) {
+        console.warn("Wyszukiwanie rozszerzone Overpass nie powiodło się:", error);
+      }
+    }
+  }
+
+  if (combined.length < 10) {
+    setLoadingStage("Sprawdzam dodatkowe wpisy OSM…");
+
+    try {
+      const nominatimElements = await fetchNominatimBusinesses(
+        city,
+        category
+      );
+      combined.push(...nominatimElements);
+    } catch (error) {
+      console.warn("Wyszukiwanie tekstowe Nominatim nie powiodło się:", error);
+    }
+  }
+
+  return combined;
+}
+
+async function fetchOverpassSelectors(
+  lat,
+  lon,
+  radius,
+  selectors,
+  loadingText
+) {
+  if (!selectors?.length) return [];
+
   const lines = selectors
     .map(selector => `${selector}(around:${radius},${lat},${lon});`)
     .join("\n");
 
-  const query = `[out:json][timeout:15];
+  const query = `[out:json][timeout:18];
 (
 ${lines}
 );
-out center 80;`;
+out center 100;`;
 
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
@@ -910,11 +1061,11 @@ out center 80;`;
 
   for (let index = 0; index < endpoints.length; index += 1) {
     setLoadingStage(
-      index === 0 ? "Pobieram firmy…" : "Próbuję serwera zapasowego…"
+      index === 0 ? loadingText : "Próbuję serwera zapasowego…"
     );
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 18000);
+    const timer = setTimeout(() => controller.abort(), 20000);
 
     try {
       const response = await fetch(endpoints[index], {
@@ -945,6 +1096,74 @@ out center 80;`;
   }
 
   throw lastError;
+}
+
+async function fetchNominatimBusinesses(city, category) {
+  const phrase = categorySearchPhrases[category] || categoryLabels[category];
+  const params = new URLSearchParams({
+    q: `${phrase}, ${city}, Polska`,
+    format: "jsonv2",
+    limit: "20",
+    countrycodes: "pl",
+    addressdetails: "1",
+    extratags: "1",
+    namedetails: "1",
+    "accept-language": "pl"
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+      {
+        headers: { Accept: "application/json" },
+        signal: controller.signal
+      }
+    );
+
+    if (!response.ok) return [];
+
+    const rows = await response.json();
+
+    return rows.map(row => {
+      const extras = row.extratags || {};
+      const address = row.address || {};
+      const displayName = clean(
+        row.namedetails?.name ||
+        row.name ||
+        String(row.display_name || "").split(",")[0]
+      );
+
+      return {
+        type: "nominatim",
+        id: row.place_id,
+        lat: Number(row.lat),
+        lon: Number(row.lon),
+        tags: {
+          name: displayName,
+          phone: extras.phone || extras["contact:phone"] || "",
+          email: extras.email || extras["contact:email"] || "",
+          website: extras.website || extras["contact:website"] || "",
+          facebook: extras.facebook || extras["contact:facebook"] || "",
+          instagram: extras.instagram || extras["contact:instagram"] || "",
+          opening_hours: extras.opening_hours || "",
+          description: extras.description || "",
+          service: extras.service || extras.services || "",
+          "addr:street": address.road || address.pedestrian || "",
+          "addr:housenumber": address.house_number || "",
+          "addr:postcode": address.postcode || "",
+          "addr:city": address.city || address.town || address.village || city
+        }
+      };
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") return [];
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function normalizeBusinesses(elements, category, city) {
