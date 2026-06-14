@@ -1,5 +1,6 @@
 const SUPABASE_URL = "https://dgvhhzfhhwrbhdxaolap.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ibOSYMgLX6RHRv5wVQIsMg_-njehHH9";
+const MAX_RESULTS_PER_SEARCH = 10;
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -803,7 +804,8 @@ async function handleSearch(event) {
       category
     );
 
-    state.results = normalizeBusinesses(elements, category);
+    state.results = normalizeBusinesses(elements, category, city)
+      .slice(0, MAX_RESULTS_PER_SEARCH);
     state.lastSearch = { city, category, radius, location };
     $("#resultsTitle").textContent = `${categoryLabels[category]} — ${city}`;
     resultsSection.classList.toggle("hidden", state.results.length === 0);
@@ -897,7 +899,7 @@ async function fetchBusinesses(lat, lon, radius, category) {
 (
 ${lines}
 );
-out center 180;`;
+out center 80;`;
 
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
@@ -945,8 +947,9 @@ out center 180;`;
   throw lastError;
 }
 
-function normalizeBusinesses(elements, category) {
-  const seen = new Set();
+function normalizeBusinesses(elements, category, city) {
+  const seenIds = new Set();
+  const seenCompanies = new Set();
 
   return elements
     .map(element => {
@@ -970,6 +973,18 @@ function normalizeBusinesses(elements, category) {
         tags["contact:instagram"] || tags.instagram || ""
       );
       const address = buildAddress(tags);
+      const openingHours = clean(tags.opening_hours || "");
+      const descriptionData = buildBusinessDescription({
+        tags,
+        category,
+        city,
+        address,
+        phone,
+        email,
+        website,
+        facebook,
+        instagram
+      });
       const id = `${element.type}-${element.id}`;
 
       const company = {
@@ -988,6 +1003,9 @@ function normalizeBusinesses(elements, category) {
         email,
         facebook,
         instagram,
+        openingHours,
+        description: descriptionData.text,
+        descriptionSource: descriptionData.source,
         hasWebsite: Boolean(website),
         status: "new",
         createdAt: new Date().toISOString()
@@ -1000,8 +1018,17 @@ function normalizeBusinesses(elements, category) {
     })
     .filter(company => {
       if (!company.lat || !company.lon) return false;
-      if (seen.has(company.id)) return false;
-      seen.add(company.id);
+      if (seenIds.has(company.id)) return false;
+
+      const normalizedPhone = company.phone.replace(/\D/g, "");
+      const businessKey = normalizedPhone
+        ? `phone:${normalizedPhone}`
+        : `name:${company.name.toLocaleLowerCase("pl")}|address:${company.address.toLocaleLowerCase("pl")}`;
+
+      if (seenCompanies.has(businessKey)) return false;
+
+      seenIds.add(company.id);
+      seenCompanies.add(businessKey);
       return true;
     })
     .sort((a, b) =>
@@ -1009,6 +1036,118 @@ function normalizeBusinesses(elements, category) {
       b.leadScore - a.leadScore ||
       a.name.localeCompare(b.name, "pl")
     );
+}
+
+function buildBusinessDescription({
+  tags,
+  category,
+  city,
+  address,
+  phone,
+  email,
+  website,
+  facebook,
+  instagram
+}) {
+  const directDescription = clean(
+    tags["description:pl"] ||
+    tags.description ||
+    tags["contact:description"] ||
+    ""
+  );
+
+  if (directDescription) {
+    return {
+      text: truncateText(directDescription, 420),
+      source: "openstreetmap"
+    };
+  }
+
+  const categoryLabel = categoryLabels[category] || "firma usługowa";
+  const sentences = [
+    `${capitalizeFirst(categoryLabel)} w miejscowości ${city}.`
+  ];
+
+  const serviceText = extractServiceDescription(tags);
+  if (serviceText) {
+    sentences.push(`Zakres oznaczony w danych: ${serviceText}.`);
+  }
+
+  const availableData = [];
+  if (address && address !== "Adres niepodany w danych") {
+    availableData.push("dokładny adres");
+  }
+  if (phone) availableData.push("numer telefonu");
+  if (email) availableData.push("adres e-mail");
+  if (facebook || instagram) availableData.push("profil społecznościowy");
+
+  if (availableData.length) {
+    sentences.push(`Dostępne dane kontaktowe: ${joinPolishList(availableData)}.`);
+  }
+
+  if (!website) {
+    sentences.push("W OpenStreetMap nie podano własnej strony internetowej.");
+  }
+
+  return {
+    text: sentences.join(" "),
+    source: "generated"
+  };
+}
+
+function extractServiceDescription(tags) {
+  const rawValues = [
+    tags.service,
+    tags.services,
+    tags.beauty,
+    tags.cuisine,
+    tags.speciality,
+    tags["healthcare:speciality"]
+  ]
+    .filter(Boolean)
+    .flatMap(value => String(value).split(/[;,]/))
+    .map(value => translateOsmValue(value.trim()))
+    .filter(Boolean);
+
+  return [...new Set(rawValues)].slice(0, 5).join(", ");
+}
+
+function translateOsmValue(value) {
+  const normalized = value.toLowerCase().replaceAll("_", " ").trim();
+  const translations = {
+    nails: "stylizacja paznokci",
+    hair: "usługi fryzjerskie",
+    massage: "masaże",
+    cosmetics: "zabiegi kosmetyczne",
+    facial: "zabiegi na twarz",
+    tanning: "opalanie",
+    piercing: "piercing",
+    tattoo: "tatuaż",
+    physiotherapy: "fizjoterapia",
+    polish: "kuchnia polska",
+    pizza: "pizza",
+    burger: "burgery",
+    coffee_shop: "kawiarnia"
+  };
+
+  return translations[normalized] || normalized;
+}
+
+function joinPolishList(items) {
+  if (items.length <= 1) return items[0] || "";
+  if (items.length === 2) return `${items[0]} i ${items[1]}`;
+  return `${items.slice(0, -1).join(", ")} i ${items.at(-1)}`;
+}
+
+function capitalizeFirst(value) {
+  const text = clean(value);
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : "";
+}
+
+function truncateText(value, maxLength) {
+  const text = clean(value);
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength - 1).trim()}…`;
 }
 
 function calculateLeadScore(company) {
@@ -1096,7 +1235,7 @@ function renderResults() {
   ).length;
 
   $("#resultsStats").textContent =
-    `Pokazano: ${list.length} • Z kontaktem: ${contactCount} • Łącznie: ${state.results.length} • Bez podanej strony: ${noWebsiteCount}`;
+    `Pokazano: ${list.length} z maks. ${MAX_RESULTS_PER_SEARCH} • Z kontaktem: ${contactCount} • Bez podanej strony: ${noWebsiteCount}`;
 
   resultsContainer.innerHTML = list
     .map(company => companyCard(company, "results"))
@@ -1221,11 +1360,20 @@ function companyCard(company, source) {
       </div>
     </div>
 
+    <div class="company-description">
+      <div class="description-heading">
+        <strong>Opis firmy</strong>
+        <span>${company.descriptionSource === "openstreetmap" ? "z OpenStreetMap" : "opis automatyczny"}</span>
+      </div>
+      <p>${escapeHtml(company.description || "Brak opisu w danych.")}</p>
+    </div>
+
     <div class="meta">
       <div class="meta-row"><span class="key">Telefon:</span><span>${company.phone ? `<a href="tel:${escapeAttr(company.phone)}">${escapeHtml(company.phone)}</a>` : "brak w danych"}</span></div>
       <div class="meta-row"><span class="key">E-mail:</span><span>${company.email ? `<a href="mailto:${escapeAttr(company.email)}">${escapeHtml(company.email)}</a>` : "brak w danych"}</span></div>
       <div class="meta-row"><span class="key">Strona:</span><span>${company.website ? `<a href="${escapeAttr(company.website)}" target="_blank" rel="noopener">Otwórz stronę</a>` : "nie podano"}</span></div>
       <div class="meta-row"><span class="key">Social:</span><span>${socials || "nie podano"}</span></div>
+      ${company.openingHours ? `<div class="meta-row"><span class="key">Godziny:</span><span>${escapeHtml(company.openingHours)}</span></div>` : ""}
     </div>
 
     <div class="verification-box">
@@ -1351,6 +1499,9 @@ function companyToDatabaseRow(company) {
     website: company.website || null,
     facebook: company.facebook || null,
     instagram: company.instagram || null,
+    description: company.description || null,
+    description_source: company.descriptionSource || "generated",
+    opening_hours: company.openingHours || null,
     latitude: company.lat || null,
     longitude: company.lon || null,
     source: "openstreetmap",
@@ -1373,6 +1524,9 @@ function databaseRowToCompany(row) {
     website: row.website || "",
     facebook: row.facebook || "",
     instagram: row.instagram || "",
+    description: row.description || buildSavedBusinessDescription(row),
+    descriptionSource: row.description_source || "generated",
+    openingHours: row.opening_hours || "",
     lat: row.latitude,
     lon: row.longitude,
     hasWebsite: Boolean(row.website),
@@ -1383,6 +1537,23 @@ function databaseRowToCompany(row) {
 
   company.leadQuality = leadQuality(company.leadScore);
   return company;
+}
+
+function buildSavedBusinessDescription(row) {
+  const categoryLabel = categoryLabels[row.category] || row.category || "firma usługowa";
+  const cityOrAddress = row.address && row.address !== "Adres niepodany w danych"
+    ? ` Lokalizacja: ${row.address}.`
+    : "";
+
+  const contact = row.phone
+    ? " Dostępny jest numer telefonu."
+    : "";
+
+  const website = row.website
+    ? ""
+    : " W danych nie podano własnej strony internetowej.";
+
+  return `${capitalizeFirst(categoryLabel)}.${cityOrAddress}${contact}${website}`.trim();
 }
 
 function findCompany(id, source) {

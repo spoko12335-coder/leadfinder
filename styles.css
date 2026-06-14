@@ -814,3 +814,39 @@ code { color: var(--accent-2); }
   .payment-row { grid-template-columns: 1fr; }
   .payment-row strong { text-align: left; }
 }
+
+
+.company-description {
+  margin: 12px 0 14px;
+  padding: 12px 13px;
+  border: 1px solid rgba(133, 160, 195, .16);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .025);
+}
+
+.description-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.description-heading strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.description-heading span {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .55px;
+}
+
+.company-description p {
+  margin: 0;
+  color: #cbd6e4;
+  font-size: 12px;
+  line-height: 1.55;
+}
