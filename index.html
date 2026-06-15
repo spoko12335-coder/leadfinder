@@ -400,7 +400,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 6.9</p>
+          <p class="eyebrow">WERSJA 7.0</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -431,6 +431,8 @@
             <div><strong>✓</strong><span>Polskie kategorie i prawidłowe oznaczenia źródeł</span></div>
             <div><strong>✓</strong><span>Pomiar jakości, czasu i źródeł każdego wyszukiwania</span></div>
             <div><strong>✓</strong><span>Statystyki użytkowników, miast, branż i płatności</span></div>
+            <div><strong>✓</strong><span>Odzyskiwanie i bezpieczna zmiana hasła</span></div>
+            <div><strong>✓</strong><span>Trwałe usuwanie konta i danych użytkownika</span></div>
             <div><strong>✓</strong><span>Opis firmy i godziny otwarcia, gdy dane są dostępne</span></div>
             <div><strong>✓</strong><span>Proste pakiety: 3 darmowe oraz 10, 30 i 100 wyszukiwań</span></div>
           </div>
@@ -482,6 +484,7 @@
           Hasło
           <input id="loginPassword" type="password" autocomplete="current-password" minlength="6" required />
         </label>
+        <button id="forgotPasswordBtn" class="auth-text-button" type="button">Nie pamiętasz hasła?</button>
         <button class="primary" type="submit">Zaloguj się</button>
       </form>
 
@@ -514,9 +517,104 @@
         <strong id="accountDialogEmail"></strong>
       </div>
       <button id="accountPlansBtn" class="secondary auth-wide-btn" type="button">Zobacz pakiety</button>
+      <button id="changePasswordBtn" class="secondary auth-wide-btn" type="button">Zmień hasło</button>
       <button id="adminPanelBtn" class="secondary auth-wide-btn hidden" type="button">Panel administratora</button>
-      <button id="logoutBtn" class="danger-button auth-wide-btn" type="button">Wyloguj się</button>
+      <button id="logoutBtn" class="secondary auth-wide-btn" type="button">Wyloguj się</button>
+      <div class="account-danger-zone">
+        <strong>Strefa niebezpieczna</strong>
+        <span>Usunięcie konta jest trwałe i usuwa dane zapisane w aplikacji.</span>
+        <button id="deleteAccountBtn" class="danger-button auth-wide-btn" type="button">Usuń konto</button>
+      </div>
     </div>
+  </dialog>
+
+
+  <dialog id="resetRequestDialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">ODZYSKIWANIE KONTA</p>
+        <h2>Nie pamiętasz hasła?</h2>
+      </div>
+      <button id="closeResetRequestDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <p class="dialog-intro">
+      Wpisz adres e-mail konta. Wyślemy link, po którego otwarciu ustawisz nowe hasło.
+    </p>
+
+    <form id="resetRequestForm" class="auth-form">
+      <label>
+        E-mail
+        <input id="resetEmail" type="email" autocomplete="email" required />
+      </label>
+      <button id="resetRequestSubmit" class="primary" type="submit">Wyślij link resetujący</button>
+    </form>
+
+    <div id="resetRequestMessage" class="auth-message hidden" role="status"></div>
+  </dialog>
+
+  <dialog id="passwordDialog">
+    <div class="dialog-head">
+      <div>
+        <p id="passwordDialogEyebrow" class="eyebrow">BEZPIECZEŃSTWO KONTA</p>
+        <h2 id="passwordDialogTitle">Zmień hasło</h2>
+      </div>
+      <button id="closePasswordDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <form id="passwordForm" class="auth-form">
+      <label>
+        Nowe hasło
+        <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required />
+      </label>
+      <label>
+        Powtórz nowe hasło
+        <input id="newPasswordConfirm" type="password" autocomplete="new-password" minlength="8" required />
+      </label>
+      <p class="password-requirements">Użyj co najmniej 8 znaków. Nie udostępniaj hasła innym osobom.</p>
+      <button id="passwordSubmitBtn" class="primary" type="submit">Zapisz nowe hasło</button>
+    </form>
+
+    <div id="passwordMessage" class="auth-message hidden" role="status"></div>
+  </dialog>
+
+  <dialog id="deleteAccountDialog" class="danger-dialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow danger-eyebrow">TRWAŁE USUNIĘCIE</p>
+        <h2>Usuń konto LeadFinder</h2>
+      </div>
+      <button id="closeDeleteAccountDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <div class="delete-warning">
+      <strong>Tej operacji nie można cofnąć.</strong>
+      <p>Usunięte zostaną konto, zapisane leady, notatki CRM, historia wyszukiwań, limity i zamówienia.</p>
+    </div>
+
+    <form id="deleteAccountForm" class="auth-form">
+      <label>
+        Przepisz swój adres e-mail
+        <input id="deleteConfirmEmail" type="email" autocomplete="email" required />
+        <small>Adres konta: <b id="deleteAccountEmailHint"></b></small>
+      </label>
+
+      <label>
+        Aktualne hasło
+        <input id="deleteCurrentPassword" type="password" autocomplete="current-password" minlength="6" required />
+      </label>
+
+      <label>
+        Wpisz: <strong>USUŃ KONTO</strong>
+        <input id="deleteConfirmText" type="text" autocomplete="off" required />
+      </label>
+
+      <button id="confirmDeleteAccountBtn" class="danger-button auth-wide-btn" type="submit" disabled>
+        Usuń konto na zawsze
+      </button>
+    </form>
+
+    <div id="deleteAccountMessage" class="auth-message hidden" role="status"></div>
   </dialog>
 
   <dialog id="plansDialog">

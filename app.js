@@ -53,6 +53,8 @@ const state = {
   lastEffectiveRadius: 0,
   tomtomAvailable: true,
   lastTomTomError: "",
+  passwordFlowMode: "change",
+  accountDeletionBusy: false,
   deferredPrompt: null
 };
 
@@ -233,6 +235,9 @@ const plansDialog = $("#plansDialog");
 const paymentDialog = $("#paymentDialog");
 const adminDialog = $("#adminDialog");
 const editLeadDialog = $("#editLeadDialog");
+const resetRequestDialog = $("#resetRequestDialog");
+const passwordDialog = $("#passwordDialog");
+const deleteAccountDialog = $("#deleteAccountDialog");
 
 verifySearchModules();
 bindEvents();
@@ -304,6 +309,35 @@ function bindEvents() {
     openPlansDialog();
   });
   $("#logoutBtn").addEventListener("click", logout);
+  $("#forgotPasswordBtn").addEventListener("click", openResetRequestDialog);
+  $("#changePasswordBtn").addEventListener("click", () =>
+    openPasswordDialog("change")
+  );
+  $("#deleteAccountBtn").addEventListener("click", openDeleteAccountDialog);
+  $("#closeResetRequestDialog").addEventListener("click", () =>
+    resetRequestDialog.close()
+  );
+  $("#closePasswordDialog").addEventListener("click", () =>
+    passwordDialog.close()
+  );
+  $("#closeDeleteAccountDialog").addEventListener("click", () =>
+    deleteAccountDialog.close()
+  );
+  $("#resetRequestForm").addEventListener("submit", requestPasswordReset);
+  $("#passwordForm").addEventListener("submit", saveNewPassword);
+  $("#deleteAccountForm").addEventListener("submit", deleteAccount);
+  $("#deleteConfirmText").addEventListener(
+    "input",
+    updateDeleteAccountButton
+  );
+  $("#deleteConfirmEmail").addEventListener(
+    "input",
+    updateDeleteAccountButton
+  );
+  $("#deleteCurrentPassword").addEventListener(
+    "input",
+    updateDeleteAccountButton
+  );
   $("#adminPanelBtn").addEventListener("click", () => {
     authDialog.close();
     openAdminDialog();
@@ -388,8 +422,24 @@ async function initApp() {
     if (error) throw error;
     await applySession(data.session);
 
-    supabaseClient.auth.onAuthStateChange((_event, session) => {
-      setTimeout(() => applySession(session), 0);
+    if (data.session && isPasswordRecoveryUrl()) {
+      setTimeout(() => openPasswordDialog("recovery"), 150);
+    }
+
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+      setTimeout(async () => {
+        await applySession(session);
+
+        if (
+          session &&
+          (
+            event === "PASSWORD_RECOVERY" ||
+            isPasswordRecoveryUrl()
+          )
+        ) {
+          openPasswordDialog("recovery");
+        }
+      }, 0);
     });
   } catch (error) {
     console.error("Błąd inicjalizacji konta:", error);
@@ -557,6 +607,374 @@ async function register(event) {
   }
 }
 
+function isPasswordRecoveryUrl() {
+  const params = new URLSearchParams(location.search);
+  return params.get("mode") === "reset-password";
+}
+
+function passwordResetRedirectUrl() {
+  return `${location.origin}${location.pathname}?mode=reset-password`;
+}
+
+function openResetRequestDialog() {
+  const email =
+    clean($("#loginEmail").value) ||
+    clean(state.session?.user?.email);
+
+  $("#resetEmail").value = email;
+  setDialogMessage("#resetRequestMessage", "", false, true);
+  resetRequestDialog.showModal();
+}
+
+async function requestPasswordReset(event) {
+  event.preventDefault();
+
+  const email = clean($("#resetEmail").value);
+  const button = $("#resetRequestSubmit");
+  button.disabled = true;
+  button.textContent = "Wysyłanie…";
+
+  try {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(
+      email,
+      {
+        redirectTo: passwordResetRedirectUrl()
+      }
+    );
+
+    if (error) throw error;
+
+    setDialogMessage(
+      "#resetRequestMessage",
+      "Jeżeli konto z tym adresem istnieje, wiadomość z linkiem do ustawienia nowego hasła została wysłana. Sprawdź również folder Spam.",
+      false
+    );
+  } catch (error) {
+    console.error("Błąd resetowania hasła:", error);
+    setDialogMessage(
+      "#resetRequestMessage",
+      passwordResetErrorMessage(error),
+      true
+    );
+  } finally {
+    button.disabled = false;
+    button.textContent = "Wyślij link resetujący";
+  }
+}
+
+function openPasswordDialog(mode = "change") {
+  if (!state.session) {
+    openResetRequestDialog();
+    return;
+  }
+
+  state.passwordFlowMode = mode;
+  $("#passwordDialogEyebrow").textContent =
+    mode === "recovery" ? "ODZYSKIWANIE KONTA" : "BEZPIECZEŃSTWO KONTA";
+  $("#passwordDialogTitle").textContent =
+    mode === "recovery" ? "Ustaw nowe hasło" : "Zmień hasło";
+  $("#passwordSubmitBtn").textContent =
+    mode === "recovery" ? "Ustaw nowe hasło" : "Zapisz nowe hasło";
+  $("#newPassword").value = "";
+  $("#newPasswordConfirm").value = "";
+  setDialogMessage("#passwordMessage", "", false, true);
+
+  if (!passwordDialog.open) {
+    passwordDialog.showModal();
+  }
+}
+
+async function saveNewPassword(event) {
+  event.preventDefault();
+
+  if (!state.session) {
+    setDialogMessage(
+      "#passwordMessage",
+      "Link wygasł albo sesja odzyskiwania nie została utworzona. Poproś o nowy link.",
+      true
+    );
+    return;
+  }
+
+  const password = $("#newPassword").value;
+  const confirmation = $("#newPasswordConfirm").value;
+
+  if (password.length < 8) {
+    setDialogMessage(
+      "#passwordMessage",
+      "Nowe hasło musi mieć co najmniej 8 znaków.",
+      true
+    );
+    return;
+  }
+
+  if (password !== confirmation) {
+    setDialogMessage(
+      "#passwordMessage",
+      "Wpisane hasła nie są identyczne.",
+      true
+    );
+    return;
+  }
+
+  const button = $("#passwordSubmitBtn");
+  button.disabled = true;
+  button.textContent = "Zapisywanie…";
+
+  try {
+    const { error } = await supabaseClient.auth.updateUser({
+      password
+    });
+
+    if (error) throw error;
+
+    setDialogMessage(
+      "#passwordMessage",
+      "Hasło zostało zmienione. Przy następnym logowaniu użyj nowego hasła.",
+      false
+    );
+
+    clearPasswordRecoveryUrl();
+
+    setTimeout(() => {
+      passwordDialog.close();
+      showToast("Hasło zostało zmienione.");
+    }, 900);
+  } catch (error) {
+    console.error("Błąd zmiany hasła:", error);
+    setDialogMessage(
+      "#passwordMessage",
+      passwordResetErrorMessage(error),
+      true
+    );
+  } finally {
+    button.disabled = false;
+    button.textContent =
+      state.passwordFlowMode === "recovery"
+        ? "Ustaw nowe hasło"
+        : "Zapisz nowe hasło";
+  }
+}
+
+function clearPasswordRecoveryUrl() {
+  const cleanUrl = `${location.origin}${location.pathname}`;
+  history.replaceState({}, document.title, cleanUrl);
+}
+
+function openDeleteAccountDialog() {
+  if (!state.session) return;
+
+  $("#deleteConfirmEmail").value = "";
+  $("#deleteConfirmText").value = "";
+  $("#deleteCurrentPassword").value = "";
+  $("#deleteAccountEmailHint").textContent =
+    state.session.user.email || "";
+  setDialogMessage("#deleteAccountMessage", "", false, true);
+  updateDeleteAccountButton();
+  deleteAccountDialog.showModal();
+}
+
+function updateDeleteAccountButton() {
+  const expectedEmail = clean(
+    state.session?.user?.email
+  ).toLocaleLowerCase("pl");
+  const enteredEmail = clean(
+    $("#deleteConfirmEmail")?.value
+  ).toLocaleLowerCase("pl");
+  const confirmation = normalizeDeleteConfirmation(
+    $("#deleteConfirmText")?.value
+  );
+  const password = $("#deleteCurrentPassword")?.value || "";
+  const ready =
+    Boolean(expectedEmail) &&
+    enteredEmail === expectedEmail &&
+    confirmation === "USUN KONTO" &&
+    password.length >= 6 &&
+    !state.accountDeletionBusy;
+
+  const button = $("#confirmDeleteAccountBtn");
+  if (button) button.disabled = !ready;
+}
+
+function normalizeDeleteConfirmation(value) {
+  return clean(value)
+    .toLocaleUpperCase("pl")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/Ł/g, "L")
+    .replace(/\s+/g, " ");
+}
+
+async function deleteAccount(event) {
+  event.preventDefault();
+
+  if (!state.session || state.accountDeletionBusy) return;
+
+  const email = clean(state.session.user.email);
+  const enteredEmail = clean($("#deleteConfirmEmail").value);
+  const password = $("#deleteCurrentPassword").value;
+  const confirmation = normalizeDeleteConfirmation(
+    $("#deleteConfirmText").value
+  );
+
+  if (
+    enteredEmail.toLocaleLowerCase("pl") !==
+      email.toLocaleLowerCase("pl") ||
+    confirmation !== "USUN KONTO"
+  ) {
+    setDialogMessage(
+      "#deleteAccountMessage",
+      "Adres e-mail lub tekst potwierdzenia jest nieprawidłowy.",
+      true
+    );
+    return;
+  }
+
+  state.accountDeletionBusy = true;
+  updateDeleteAccountButton();
+  const button = $("#confirmDeleteAccountBtn");
+  button.textContent = "Usuwanie konta…";
+
+  try {
+    const { error: signInError } =
+      await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+    if (signInError) {
+      throw new Error("CURRENT_PASSWORD_INVALID");
+    }
+
+    const { data, error } = await supabaseClient.functions.invoke(
+      "delete-my-account",
+      {
+        body: {
+          email,
+          confirmation: "DELETE_ACCOUNT"
+        }
+      }
+    );
+
+    if (error) {
+      const status = Number(error.context?.status || 0);
+      if (status === 403) {
+        throw new Error("ADMIN_ACCOUNT_PROTECTED");
+      }
+      throw error;
+    }
+
+    if (!data?.ok) {
+      throw new Error(data?.error || "ACCOUNT_DELETE_FAILED");
+    }
+
+    clearLeadFinderLocalData();
+
+    try {
+      await supabaseClient.auth.signOut({ scope: "local" });
+    } catch {
+      // Konto zostało już usunięte po stronie serwera.
+    }
+
+    deleteAccountDialog.close();
+    authDialog.close();
+
+    document.body.innerHTML = `
+      <main class="account-deleted-screen">
+        <section>
+          <div class="guest-logo">✓</div>
+          <h1>Konto zostało usunięte</h1>
+          <p>Usunęliśmy konto oraz dane zapisane w aplikacji LeadFinder.</p>
+          <button class="primary" type="button" onclick="location.href='${location.pathname}'">
+            Wróć do strony głównej
+          </button>
+        </section>
+      </main>
+    `;
+  } catch (error) {
+    console.error("Błąd usuwania konta:", error);
+
+    const message =
+      error?.message === "CURRENT_PASSWORD_INVALID"
+        ? "Aktualne hasło jest nieprawidłowe."
+        : error?.message === "ADMIN_ACCOUNT_PROTECTED"
+          ? "Konto administratora jest chronione i nie może zostać usunięte z poziomu aplikacji."
+          : "Nie udało się usunąć konta. Spróbuj ponownie albo skontaktuj się z administratorem.";
+
+    setDialogMessage(
+      "#deleteAccountMessage",
+      message,
+      true
+    );
+  } finally {
+    state.accountDeletionBusy = false;
+    button.textContent = "Usuń konto na zawsze";
+    updateDeleteAccountButton();
+  }
+}
+
+function clearLeadFinderLocalData() {
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (
+        key.startsWith("leadfinder") ||
+        key.startsWith("sb-")
+      ) {
+        localStorage.removeItem(key);
+      }
+    });
+    sessionStorage.clear();
+  } catch {
+    // Czyszczenie pamięci lokalnej jest dodatkowym zabezpieczeniem.
+  }
+}
+
+function setDialogMessage(
+  selector,
+  text,
+  isError = false,
+  hidden = false
+) {
+  const element = $(selector);
+  if (!element) return;
+
+  element.textContent = text;
+  element.classList.toggle("hidden", hidden || !text);
+  element.classList.toggle("auth-error", isError);
+  element.classList.toggle("auth-success", !isError && Boolean(text));
+}
+
+function passwordResetErrorMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+
+  if (
+    message.includes("rate limit") ||
+    message.includes("too many")
+  ) {
+    return "Wysłano zbyt wiele wiadomości. Odczekaj kilka minut i spróbuj ponownie.";
+  }
+
+  if (
+    message.includes("same password") ||
+    message.includes("different from")
+  ) {
+    return "Nowe hasło musi różnić się od poprzedniego.";
+  }
+
+  if (message.includes("password")) {
+    return "Hasło jest zbyt słabe albo nie spełnia wymagań bezpieczeństwa.";
+  }
+
+  if (
+    message.includes("expired") ||
+    message.includes("invalid")
+  ) {
+    return "Link resetujący wygasł lub jest nieprawidłowy. Poproś o nowy link.";
+  }
+
+  return "Nie udało się wykonać operacji. Spróbuj ponownie.";
+}
+
 async function logout() {
   const { error } = await supabaseClient.auth.signOut();
   if (error) {
@@ -572,7 +990,9 @@ async function logout() {
 }
 
 function setAuthBusy(busy) {
-  $$("#loginForm button, #registerForm button").forEach(button => {
+  $$(
+    "#loginForm button, #registerForm button, #resetRequestForm button, #passwordForm button"
+  ).forEach(button => {
     button.disabled = busy;
   });
 }
@@ -604,8 +1024,14 @@ function authErrorMessage(error) {
   if (message.includes("already registered") || message.includes("already exists")) {
     return "Konto z tym adresem e-mail już istnieje.";
   }
+  if (
+    message.includes("rate limit") ||
+    message.includes("too many")
+  ) {
+    return "Wykonano zbyt wiele prób. Odczekaj kilka minut.";
+  }
   if (message.includes("password")) {
-    return "Hasło musi mieć co najmniej 6 znaków.";
+    return "Hasło nie spełnia wymagań bezpieczeństwa.";
   }
 
   return "Nie udało się wykonać tej operacji. Spróbuj ponownie.";

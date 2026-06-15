@@ -2896,3 +2896,135 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 7.0 — BEZPIECZEŃSTWO KONTA
+   ========================================================= */
+
+.auth-text-button {
+  justify-self: start;
+  width: auto;
+  margin: -4px 0 3px;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 850;
+  box-shadow: none;
+}
+
+.auth-text-button:hover {
+  text-decoration: underline;
+}
+
+.dialog-intro {
+  margin: -2px 0 15px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.password-requirements {
+  margin: -4px 0 2px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.account-danger-zone {
+  display: grid;
+  gap: 7px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(230,95,119,.16);
+}
+
+.account-danger-zone strong {
+  color: #b7485e;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .55px;
+}
+
+.account-danger-zone span {
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.danger-dialog {
+  border-color: rgba(230,95,119,.22);
+}
+
+.danger-eyebrow {
+  color: #c34d64;
+}
+
+.delete-warning {
+  margin-bottom: 14px;
+  padding: 13px;
+  border: 1px solid rgba(230,95,119,.20);
+  border-radius: 12px;
+  background: #fff3f5;
+}
+
+.delete-warning strong {
+  color: #b7485e;
+  font-size: 12px;
+}
+
+.delete-warning p {
+  margin: 5px 0 0;
+  color: #815e66;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+#deleteAccountForm label small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+#deleteAccountForm label small b {
+  color: #5d7276;
+}
+
+#confirmDeleteAccountBtn:disabled {
+  opacity: .48;
+  cursor: not-allowed;
+}
+
+.account-deleted-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 15% 10%, rgba(95,205,179,.22), transparent 28%),
+    radial-gradient(circle at 90% 8%, rgba(255,165,138,.20), transparent 29%),
+    linear-gradient(180deg, #f8fdfb, #eef9f5);
+}
+
+.account-deleted-screen section {
+  width: min(100%, 480px);
+  padding: 30px;
+  border: 1px solid rgba(43,105,99,.12);
+  border-radius: 25px;
+  background: rgba(255,255,255,.94);
+  box-shadow: 0 25px 65px rgba(43,105,96,.15);
+  text-align: center;
+}
+
+.account-deleted-screen h1 {
+  margin: 17px 0 9px;
+  font-size: 29px;
+}
+
+.account-deleted-screen p {
+  margin: 0 0 20px;
+  color: var(--muted);
+  line-height: 1.55;
+}
