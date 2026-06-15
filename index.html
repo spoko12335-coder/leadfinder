@@ -4,8 +4,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
   <meta name="theme-color" content="#f3fbf8" />
-  <meta name="description" content="Wyszukiwarka lokalnych firm bez podanej strony internetowej." />
-  <title>LeadFinder — firmy bez strony WWW</title>
+  <meta name="description" content="Polska aplikacja do wyszukiwania lokalnych firm, kontaktów i potencjalnych klientów." />
+  <title>TrafKlienta — znajdź firmy i klientów</title>
+  <meta name="application-name" content="TrafKlienta" />
+  <meta property="og:title" content="TrafKlienta — znajdź firmy i klientów" />
+  <meta property="og:description" content="Znajduj lokalne firmy, zapisuj kontakty i zdobywaj nowych klientów." />
+  <meta property="og:type" content="website" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icons/icon-192.png" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
@@ -15,7 +19,7 @@
   <section id="authLoadingScreen" class="auth-loading-screen" aria-live="polite">
     <div class="brand-loader">
       <div class="brand-loader-icon">⌕</div>
-      <strong>LeadFinder</strong>
+      <strong>TrafKlienta</strong>
       <span>Uruchamianie aplikacji…</span>
     </div>
   </section>
@@ -23,10 +27,10 @@
   <section id="guestLanding" class="guest-landing hidden">
     <div class="guest-hero-card">
       <div class="guest-logo">⌕</div>
-      <p class="eyebrow">LEADFINDER</p>
-      <h1>Znajduj firmy i nowych klientów</h1>
+      <p class="eyebrow">TRAFKLIENTA</p>
+      <h1>Trafiaj do właściwych klientów</h1>
       <p class="guest-lead">
-        Wyszukuj lokalne firmy, zapisuj leady i przygotowuj gotowe wiadomości sprzedażowe.
+        Znajduj lokalne firmy, zapisuj kontakty i przygotowuj skuteczne wiadomości sprzedażowe.
       </p>
 
       <div class="free-account-badge">
@@ -65,8 +69,8 @@
     <header class="topbar">
       <div>
         <p class="eyebrow">NARZĘDZIE SPRZEDAŻOWE</p>
-        <h1>LeadFinder</h1>
-        <p class="subtitle">Znajduj firmy, leady i nowych klientów</p>
+        <h1>TrafKlienta</h1>
+        <p class="subtitle">Znajdź firmy. Nawiąż kontakt. Zdobądź klienta.</p>
       </div>
 
       <div class="header-actions">
@@ -408,8 +412,9 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 7.3</p>
-          <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
+          <p class="eyebrow">WERSJA 7.4</p>
+          <p class="brand-release-note">Nowa nazwa marki: TrafKlienta. Twoje konto, limity i zapisane dane pozostają bez zmian.</p>
+          <h2 id="aboutHeading">Pakiety i ręczne płatności</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
             3 prawidłowo wykonane wyszukiwania w miesiącu.
@@ -447,8 +452,8 @@
             <div><strong>✓</strong><span>Proste pakiety: 3 darmowe oraz 10, 30 i 100 wyszukiwań</span></div>
           </div>
           <div class="notice">
-            Wyższy pakiet można zamówić i opłacić zwykłym przelewem bankowym.
-            Administrator zatwierdza wpłatę i aktywuje limit na 30 dni.
+            Wyższy pakiet można opłacić przelewem bankowym albo przelewem na telefon BLIK.
+            Administrator sprawdza wpływ i ręcznie aktywuje limit na 30 dni.
           </div>
 
           <div class="legal-document-grid">
@@ -480,7 +485,7 @@
     </main>
 
     <footer class="legal-footer">
-      <span>LeadFinder · Kamil Mazur · <a href="mailto:logo.wizytowka@gmail.com">logo.wizytowka@gmail.com</a></span>
+      <span>TrafKlienta · Kamil Mazur · <a href="mailto:logo.wizytowka@gmail.com">logo.wizytowka@gmail.com</a></span>
       <nav aria-label="Dokumenty prawne">
         <a href="./terms.html">Regulamin</a>
         <a href="./privacy.html">Prywatność</a>
@@ -506,7 +511,7 @@
   <dialog id="authDialog">
     <div class="dialog-head">
       <div>
-        <p class="eyebrow">KONTO LEADFINDER</p>
+        <p class="eyebrow">KONTO TRAFKLIENTA</p>
         <h2 id="authDialogTitle">Zaloguj się</h2>
       </div>
       <button id="closeAuthDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
@@ -553,8 +558,8 @@
             <input id="registerTerms" type="checkbox" required />
             <span>
               Akceptuję
-              <a href="./terms.html" target="_blank" rel="noopener">Regulamin LeadFinder</a>
-              (wersja 1.1-2026-06-15).
+              <a href="./terms.html" target="_blank" rel="noopener">Regulamin TrafKlienta</a>
+              (wersja 1.2-2026-06-15).
             </span>
           </label>
 
@@ -563,7 +568,7 @@
             <span>
               Potwierdzam, że zapoznałem się z
               <a href="./privacy.html" target="_blank" rel="noopener">Polityką prywatności</a>
-              (wersja 1.1-2026-06-15).
+              (wersja 1.2-2026-06-15).
             </span>
           </label>
         </div>
@@ -602,7 +607,7 @@
     <div class="dialog-head">
       <div>
         <p class="eyebrow">AKTUALIZACJA DOKUMENTÓW</p>
-        <h2>Zapoznaj się z zasadami LeadFinder</h2>
+        <h2>Zapoznaj się z zasadami TrafKlienta</h2>
       </div>
     </div>
 
@@ -694,7 +699,7 @@
     <div class="dialog-head">
       <div>
         <p class="eyebrow danger-eyebrow">TRWAŁE USUNIĘCIE</p>
-        <h2>Usuń konto LeadFinder</h2>
+        <h2>Usuń konto TrafKlienta</h2>
       </div>
       <button id="closeDeleteAccountDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
     </div>
@@ -752,7 +757,7 @@
       </article>
 
       <article class="plan-card" data-plan="start">
-        <span class="plan-label">MINI</span>
+        <span class="plan-label">TRAFKLIENTA MINI</span>
         <h3>10 wyszukiwań</h3>
         <strong>20 zł / 30 dni</strong>
         <p>Dla osoby, która szuka klientów okazjonalnie.</p>
@@ -760,7 +765,7 @@
       </article>
 
       <article class="plan-card recommended-plan" data-plan="standard">
-        <span class="plan-label">STANDARD</span>
+        <span class="plan-label">TRAFKLIENTA STANDARD</span>
         <span class="recommended-label">NAJPOPULARNIEJSZY</span>
         <h3>30 wyszukiwań</h3>
         <strong>49 zł / 30 dni</strong>
@@ -769,7 +774,7 @@
       </article>
 
       <article class="plan-card" data-plan="pro">
-        <span class="plan-label">PRO</span>
+        <span class="plan-label">TRAFKLIENTA PRO</span>
         <h3>100 wyszukiwań</h3>
         <strong>119 zł / 30 dni</strong>
         <p>Dla agencji i intensywnego prospectingu B2B.</p>
@@ -990,7 +995,7 @@
       </div>
 
       <p id="unregisteredDashboardError" class="error hidden">
-        Nie udało się pobrać ewidencji. Uruchom skrypt LeadFinder 7.2 w Supabase.
+        Nie udało się pobrać ewidencji. Uruchom aktualny skrypt TrafKlienta w Supabase.
       </p>
 
       <div class="unregistered-summary-grid">
@@ -1043,13 +1048,13 @@
         </label>
         <label class="manual-sale-description">
           Opis
-          <input id="manualSaleDescription" type="text" placeholder="np. pakiet LeadFinder lub wykonanie strony WWW" required />
+          <input id="manualSaleDescription" type="text" placeholder="np. pakiet TrafKlienta lub wykonanie strony WWW" required />
         </label>
         <button class="primary" type="submit">Dodaj ręczny wpis</button>
       </form>
 
       <p class="hint">
-        Opłacone pakiety LeadFinder są dodawane automatycznie. Do limitu liczony jest przychód należny,
+        Opłacone pakiety TrafKlienta są dodawane automatycznie. Do limitu liczony jest przychód należny,
         a prowizja operatora jest wykazywana osobno i nie pomniejsza tej wartości.
       </p>
 

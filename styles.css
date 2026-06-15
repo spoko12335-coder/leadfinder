@@ -967,7 +967,7 @@ code { color: var(--accent-2); }
 
 
 /* =========================================================
-   LEADFINDER 5.4 — PRZYJAZNY JASNY MOTYW
+   TRAFKLIENTA 5.4 — PRZYJAZNY JASNY MOTYW
    ========================================================= */
 
 :root {
@@ -1443,7 +1443,7 @@ code {
 
 
 /* =========================================================
-   LEADFINDER 5.5 — EKRAN STARTOWY I LOKALIZACJA
+   TRAFKLIENTA 5.5 — EKRAN STARTOWY I LOKALIZACJA
    ========================================================= */
 
 .auth-loading-screen,
@@ -1718,7 +1718,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 5.6 — TYLKO WARTOŚCIOWE LEADY
+   TRAFKLIENTA 5.6 — TYLKO WARTOŚCIOWE LEADY
    ========================================================= */
 
 .required-contact {
@@ -1761,7 +1761,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 5.7 — PODPOWIEDZI MIEJSCOWOŚCI
+   TRAFKLIENTA 5.7 — PODPOWIEDZI MIEJSCOWOŚCI
    ========================================================= */
 
 .city-autocomplete {
@@ -1853,7 +1853,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 5.8 — DOKŁADNY WYBÓR MIEJSCOWOŚCI
+   TRAFKLIENTA 5.8 — DOKŁADNY WYBÓR MIEJSCOWOŚCI
    ========================================================= */
 
 .city-picker {
@@ -2052,7 +2052,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 5.9 — MINI CRM
+   TRAFKLIENTA 5.9 — MINI CRM
    ========================================================= */
 
 .crm-summary-grid {
@@ -2235,7 +2235,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 6.0 — SZYBSZE WYSZUKIWANIE
+   TRAFKLIENTA 6.0 — SZYBSZE WYSZUKIWANIE
    ========================================================= */
 
 #searchBtn:disabled {
@@ -2253,7 +2253,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 6.2 — ODPORNA WYSZUKIWARKA
+   TRAFKLIENTA 6.2 — ODPORNA WYSZUKIWARKA
    ========================================================= */
 
 .error:not(.hidden) {
@@ -2273,7 +2273,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 6.4 — LEPSZE WYNIKI I DWA POZIOMY LEADÓW
+   TRAFKLIENTA 6.4 — LEPSZE WYNIKI I DWA POZIOMY LEADÓW
    ========================================================= */
 
 .ready-filter {
@@ -2493,7 +2493,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 6.5 — TOMTOM + OPENSTREETMAP
+   TRAFKLIENTA 6.5 — TOMTOM + OPENSTREETMAP
    ========================================================= */
 
 .data-source-badge {
@@ -2504,7 +2504,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 6.6 — BEZPIECZNY WYBÓR MIEJSCOWOŚCI
+   TRAFKLIENTA 6.6 — BEZPIECZNY WYBÓR MIEJSCOWOŚCI
    ========================================================= */
 
 .city-suggestion-meta {
@@ -2541,7 +2541,7 @@ body.guest-mode {
 
 
 /* =========================================================
-   LEADFINDER 6.7 — CZYTELNIEJSZE WYNIKI
+   TRAFKLIENTA 6.7 — CZYTELNIEJSZE WYNIKI
    ========================================================= */
 
 .app-shell {
@@ -2599,7 +2599,7 @@ main {
 
 
 /* =========================================================
-   LEADFINDER 6.8 — UPROSZCZONE PAKIETY
+   TRAFKLIENTA 6.8 — UPROSZCZONE PAKIETY
    ========================================================= */
 
 .simplified-plans-grid {
@@ -2651,7 +2651,7 @@ main {
 
 
 /* =========================================================
-   LEADFINDER 6.9 — STABILIZACJA I STATYSTYKI
+   TRAFKLIENTA 6.9 — STABILIZACJA I STATYSTYKI
    ========================================================= */
 
 .search-quality-badge {
@@ -2899,7 +2899,7 @@ main {
 
 
 /* =========================================================
-   LEADFINDER 7.0 — BEZPIECZEŃSTWO KONTA
+   TRAFKLIENTA 7.0 — BEZPIECZEŃSTWO KONTA
    ========================================================= */
 
 .auth-text-button {
@@ -3031,7 +3031,7 @@ main {
 
 
 /* =========================================================
-   LEADFINDER 7.1 — DOKUMENTY PRAWNE I AKCEPTACJE
+   TRAFKLIENTA 7.1 — DOKUMENTY PRAWNE I AKCEPTACJE
    ========================================================= */
 
 .guest-legal-links,
@@ -3158,7 +3158,7 @@ main {
 
 
 /* =========================================================
-   LEADFINDER 7.2 — DZIAŁALNOŚĆ NIEREJESTROWANA
+   TRAFKLIENTA 7.2 — DZIAŁALNOŚĆ NIEREJESTROWANA
    ========================================================= */
 
 .sales-availability-notice,
@@ -3405,7 +3405,7 @@ main {
 
 
 /* =========================================================
-   LEADFINDER 7.2.2 — WIDOCZNY ZAPIS USTAWIEŃ PŁATNOŚCI
+   TRAFKLIENTA 7.2.2 — WIDOCZNY ZAPIS USTAWIEŃ PŁATNOŚCI
    ========================================================= */
 
 .business-settings-message {
@@ -3443,5 +3443,18 @@ main {
 }
 
 
-/* LeadFinder 7.3 — ręczny BLIK na telefon */
+/* TrafKlienta 7.3 — ręczny BLIK na telefon */
 .payment-method-selector{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-bottom:12px}.payment-method-btn{display:grid;gap:3px;padding:12px;border:1px solid rgba(43,105,99,.14);border-radius:12px;background:#f7fbfa;color:#49656a;text-align:left;box-shadow:none}.payment-method-btn strong{font-size:11px}.payment-method-btn span{color:var(--muted);font-size:8px}.payment-method-btn.active{border-color:rgba(36,157,138,.42);background:#e9f8f3;color:#197a59;box-shadow:inset 0 0 0 1px rgba(36,157,138,.08)}.payment-highlight{display:grid;gap:5px;padding:15px;border:1px solid rgba(36,157,138,.22);border-radius:13px;background:linear-gradient(135deg,#eaf9f4,#f5fcfa);text-align:center}.payment-highlight span{color:#54736f;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.45px}.payment-highlight strong{color:#177b68;font-size:24px;letter-spacing:1px}.payment-security-warning{padding:11px 12px;border:1px solid rgba(223,93,115,.19);border-radius:11px;background:#fff2f4;color:#a74659;font-size:9px;font-weight:750;line-height:1.5}.admin-payment-method{color:#237d6e;font-size:9px;font-weight:800}@media(max-width:520px){.payment-method-selector{grid-template-columns:1fr}}
+
+
+/* TrafKlienta 7.4 — rebranding */
+.brand-release-note {
+  margin: 4px 0 14px;
+  padding: 9px 11px;
+  border: 1px solid rgba(36,157,138,.16);
+  border-radius: 10px;
+  background: #eef9f5;
+  color: #347267;
+  font-size: 9px;
+  line-height: 1.5;
+}

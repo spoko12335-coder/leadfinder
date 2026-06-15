@@ -11,8 +11,8 @@ const MAX_AUTOMATIC_RADIUS = 30000;
 const READY_LEADS_BEFORE_STOP = 6;
 const TOMTOM_FUNCTION_NAME = "search-tomtom-businesses";
 const TOMTOM_TIMEOUT_MS = 9500;
-const TERMS_VERSION = "1.1-2026-06-15";
-const PRIVACY_VERSION = "1.1-2026-06-15";
+const TERMS_VERSION = "1.2-2026-06-15";
+const PRIVACY_VERSION = "1.2-2026-06-15";
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -285,7 +285,7 @@ function bindEvents() {
   $("#savedSort").addEventListener("change", renderSaved);
   $("#savedSearch").addEventListener("input", renderSaved);
   $("#exportResultsBtn").addEventListener("click", () =>
-    exportCsv(getFilteredResults(), "wyniki-leadfinder.csv")
+    exportCsv(getFilteredResults(), "wyniki-trafklienta.csv")
   );
   $("#exportSavedBtn").addEventListener("click", () =>
     exportCsv(getFilteredSavedLeads(), "zapisane-leady.csv")
@@ -1045,7 +1045,7 @@ async function deleteAccount(event) {
       throw new Error(data?.error || "ACCOUNT_DELETE_FAILED");
     }
 
-    clearLeadFinderLocalData();
+    clearTrafKlientaLocalData();
 
     try {
       await supabaseClient.auth.signOut({ scope: "local" });
@@ -1061,7 +1061,7 @@ async function deleteAccount(event) {
         <section>
           <div class="guest-logo">✓</div>
           <h1>Konto zostało usunięte</h1>
-          <p>Usunęliśmy konto oraz dane zapisane w aplikacji LeadFinder.</p>
+          <p>Usunęliśmy konto oraz dane zapisane w aplikacji TrafKlienta.</p>
           <button class="primary" type="button" onclick="location.href='${location.pathname}'">
             Wróć do strony głównej
           </button>
@@ -1090,7 +1090,7 @@ async function deleteAccount(event) {
   }
 }
 
-function clearLeadFinderLocalData() {
+function clearTrafKlientaLocalData() {
   try {
     Object.keys(localStorage).forEach(key => {
       if (
@@ -1710,7 +1710,7 @@ function businessSettingsErrorMessage(error) {
       text
     )
   ) {
-    return "W Supabase brakuje aktualnej funkcji zapisu. Uruchom skrypt SQL LeadFinder 7.3 i odśwież stronę.";
+    return "W Supabase brakuje aktualnej funkcji zapisu. Uruchom skrypt SQL TrafKlienta 7.3 i odśwież stronę.";
   }
 
   if (/SALES_ENABLE_NOT_PERSISTED/i.test(text)) {
@@ -2020,7 +2020,7 @@ function exportUnregisteredSales() {
 
   downloadCsvRows(
     [headers, ...rows],
-    `leadfinder-ewidencja-${data.summary?.quarter_key || "kwartal"}.csv`
+    `trafklienta-ewidencja-${data.summary?.quarter_key || "kwartal"}.csv`
   );
 }
 

@@ -1,4 +1,4 @@
-const CACHE = "leadfinder-v7-3-blik-phone";
+const CACHE = "trafklienta-v7-4-rebranding";
 const ASSETS = [
   "./",
   "./index.html",

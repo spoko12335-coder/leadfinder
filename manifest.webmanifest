@@ -1,7 +1,7 @@
 {
-  "name": "LeadFinder — firmy bez strony WWW",
-  "short_name": "LeadFinder",
-  "description": "Wyszukiwarka lokalnych firm bez podanej strony internetowej.",
+  "name": "TrafKlienta — znajdź firmy i klientów",
+  "short_name": "TrafKlienta",
+  "description": "Polska aplikacja do wyszukiwania lokalnych firm, kontaktów i potencjalnych klientów.",
   "lang": "pl",
   "start_url": "./",
   "scope": "./",
@@ -25,5 +25,10 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "id": "./?app=trafklienta",
+  "categories": [
+    "business",
+    "productivity"
   ]
 }
