@@ -26,10 +26,12 @@ const state = {
   adminOrders: [],
   lastSearch: null,
   detectedLocation: null,
+  selectedCity: null,
   citySuggestions: [],
   citySuggestionTimer: null,
   citySuggestionController: null,
   citySuggestionCache: new Map(),
+  recentCities: [],
   deferredPrompt: null
 };
 
@@ -241,6 +243,7 @@ function bindEvents() {
   $("#city").addEventListener("keydown", handleCityKeydown);
   $("#city").addEventListener("focus", handleCityFocus);
   $("#citySuggestions").addEventListener("click", handleCitySuggestionClick);
+  $("#clearSelectedCity").addEventListener("click", clearSelectedCity);
   document.addEventListener("click", handleOutsideCitySuggestions);
   $("#closeAuthDialog").addEventListener("click", () => authDialog.close());
   $("#closePlansDialog").addEventListener("click", () => plansDialog.close());
@@ -320,6 +323,7 @@ function bindEvents() {
     );
   }
 
+  state.recentCities = loadRecentCities();
   handlePurposeChange();
   handleCategoryChange();
 }
@@ -1065,7 +1069,7 @@ async function handleSearch(event) {
     );
     reserved = true;
 
-    const location = await resolveSearchLocation(city);
+    const location = await ensureSelectedSearchLocation(city);
     const elements = await fetchBusinesses(
       location.lat,
       location.lon,
@@ -1159,6 +1163,16 @@ function handleCityInput() {
   const query = clean($("#city").value);
 
   if (
+    state.selectedCity &&
+    query.toLocaleLowerCase("pl") !==
+      state.selectedCity.city.toLocaleLowerCase("pl") &&
+    query.toLocaleLowerCase("pl") !==
+      state.selectedCity.inputLabel.toLocaleLowerCase("pl")
+  ) {
+    resetSelectedCity(false);
+  }
+
+  if (
     state.detectedLocation &&
     query.toLocaleLowerCase("pl") !==
       state.detectedLocation.city.toLocaleLowerCase("pl")
@@ -1168,36 +1182,59 @@ function handleCityInput() {
 
   clearTimeout(state.citySuggestionTimer);
 
-  if (query.length < 3) {
-    closeCitySuggestions();
+  if (query.length < 2) {
+    setCityLoading(false);
+
+    if (!query && state.recentCities.length) {
+      state.citySuggestions = state.recentCities.map(item => ({
+        ...item,
+        recent: true
+      }));
+      renderCitySuggestions("Ostatnio wybrane");
+    } else {
+      closeCitySuggestions();
+    }
+
     setLocationStatus(
-      "Wpisz co najmniej 3 litery i wybierz właściwą miejscowość z listy.",
+      "Wpisz nazwę miejscowości lub kod pocztowy i wybierz pozycję z listy.",
       "neutral"
     );
     return;
   }
 
-  setLocationStatus("Szukam pasujących miejscowości…", "loading");
+  setCityLoading(true);
+  setLocationStatus("Szukam miejscowości w Polsce…", "loading");
 
   state.citySuggestionTimer = setTimeout(() => {
     loadCitySuggestions(query);
-  }, 650);
+  }, 450);
 }
 
 function handleCityFocus() {
   const query = clean($("#city").value);
 
-  if (
-    query.length >= 3 &&
-    state.citySuggestions.length
-  ) {
+  if (!query && state.recentCities.length) {
+    state.citySuggestions = state.recentCities.map(item => ({
+      ...item,
+      recent: true
+    }));
+    renderCitySuggestions("Ostatnio wybrane");
+    return;
+  }
+
+  if (query.length >= 2 && state.citySuggestions.length) {
     openCitySuggestions();
   }
 }
 
 function handleCityKeydown(event) {
   const container = $("#citySuggestions");
-  if (container.classList.contains("hidden")) return;
+  if (container.classList.contains("hidden")) {
+    if (event.key === "ArrowDown" && state.citySuggestions.length) {
+      openCitySuggestions();
+    }
+    return;
+  }
 
   const options = [...container.querySelectorAll("[role='option']")];
   if (!options.length) return;
@@ -1208,23 +1245,24 @@ function handleCityKeydown(event) {
 
   if (event.key === "ArrowDown") {
     event.preventDefault();
-    const nextIndex = activeIndex < options.length - 1
-      ? activeIndex + 1
-      : 0;
-    setActiveCitySuggestion(options, nextIndex);
+    setActiveCitySuggestion(
+      options,
+      activeIndex < options.length - 1 ? activeIndex + 1 : 0
+    );
   }
 
   if (event.key === "ArrowUp") {
     event.preventDefault();
-    const nextIndex = activeIndex > 0
-      ? activeIndex - 1
-      : options.length - 1;
-    setActiveCitySuggestion(options, nextIndex);
+    setActiveCitySuggestion(
+      options,
+      activeIndex > 0 ? activeIndex - 1 : options.length - 1
+    );
   }
 
-  if (event.key === "Enter" && activeIndex >= 0) {
+  if (event.key === "Enter") {
     event.preventDefault();
-    selectCitySuggestion(Number(options[activeIndex].dataset.index));
+    const index = activeIndex >= 0 ? activeIndex : 0;
+    selectCitySuggestion(Number(options[index].dataset.index));
   }
 
   if (event.key === "Escape") {
@@ -1245,12 +1283,13 @@ function handleOutsideCitySuggestions(event) {
 }
 
 async function loadCitySuggestions(query) {
-  const normalizedQuery = query.toLocaleLowerCase("pl");
+  const normalizedQuery = normalizeCityQuery(query);
 
   if (state.citySuggestionCache.has(normalizedQuery)) {
     state.citySuggestions = state.citySuggestionCache.get(normalizedQuery);
+    setCityLoading(false);
     renderCitySuggestions();
-    return;
+    return state.citySuggestions;
   }
 
   if (state.citySuggestionController) {
@@ -1260,10 +1299,78 @@ async function loadCitySuggestions(query) {
   const controller = new AbortController();
   state.citySuggestionController = controller;
 
+  try {
+    const photonResults = await fetchPhotonCitySuggestions(
+      query,
+      controller.signal
+    );
+
+    let nominatimResults = [];
+    if (photonResults.length < 6 || containsPostcode(query)) {
+      nominatimResults = await fetchNominatimCitySuggestions(
+        query,
+        controller.signal
+      );
+    }
+
+    const suggestions = rankAndDeduplicateCities(
+      [...photonResults, ...nominatimResults],
+      query
+    ).slice(0, 10);
+
+    state.citySuggestions = suggestions;
+    state.citySuggestionCache.set(normalizedQuery, suggestions);
+    renderCitySuggestions();
+    return suggestions;
+  } catch (error) {
+    if (error?.name === "AbortError") return [];
+
+    console.error("Błąd podpowiedzi miejscowości:", error);
+    state.citySuggestions = [];
+    renderCitySuggestions();
+    setLocationStatus(
+      "Nie udało się pobrać podpowiedzi. Sprawdź internet i spróbuj ponownie.",
+      "error"
+    );
+    return [];
+  } finally {
+    setCityLoading(false);
+    if (state.citySuggestionController === controller) {
+      state.citySuggestionController = null;
+    }
+  }
+}
+
+async function fetchPhotonCitySuggestions(query, signal) {
+  const params = new URLSearchParams({
+    q: query,
+    lang: "pl",
+    limit: "15",
+    bbox: "14.07,49.00,24.15,54.90"
+  });
+
+  const response = await fetch(
+    `https://photon.komoot.io/api/?${params.toString()}`,
+    {
+      headers: { Accept: "application/json" },
+      signal
+    }
+  );
+
+  if (!response.ok) return [];
+
+  const data = await response.json();
+
+  return (data.features || [])
+    .map(normalizePhotonCitySuggestion)
+    .filter(Boolean);
+}
+
+async function fetchNominatimCitySuggestions(query, signal) {
   const params = new URLSearchParams({
     q: `${query}, Polska`,
     format: "jsonv2",
-    limit: "8",
+    limit: "12",
     countrycodes: "pl",
     addressdetails: "1",
     namedetails: "1",
@@ -1271,48 +1378,66 @@ async function loadCitySuggestions(query) {
     "accept-language": "pl"
   });
 
-  try {
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
-      {
-        headers: { Accept: "application/json" },
-        signal: controller.signal
-      }
-    );
-
-    if (!response.ok) throw new Error("CITY_SUGGESTIONS_FAILED");
-
-    const rows = await response.json();
-
-    const suggestions = rows
-      .map(normalizeCitySuggestion)
-      .filter(item => item.city && item.lat && item.lon)
-      .filter((item, index, list) =>
-        list.findIndex(other => other.key === item.key) === index
-      )
-      .slice(0, 8);
-
-    state.citySuggestions = suggestions;
-    state.citySuggestionCache.set(normalizedQuery, suggestions);
-    renderCitySuggestions();
-  } catch (error) {
-    if (error?.name === "AbortError") return;
-
-    console.error("Błąd podpowiedzi miejscowości:", error);
-    state.citySuggestions = [];
-    closeCitySuggestions();
-    setLocationStatus(
-      "Nie udało się pobrać podpowiedzi. Możesz wpisać miasto ręcznie.",
-      "error"
-    );
-  } finally {
-    if (state.citySuggestionController === controller) {
-      state.citySuggestionController = null;
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+    {
+      headers: { Accept: "application/json" },
+      signal
     }
-  }
+  );
+
+  if (!response.ok) return [];
+
+  const rows = await response.json();
+  return rows.map(normalizeNominatimCitySuggestion).filter(Boolean);
 }
 
-function normalizeCitySuggestion(row) {
+function normalizePhotonCitySuggestion(feature) {
+  const properties = feature.properties || {};
+  const coordinates = feature.geometry?.coordinates || [];
+  const type = normalizePlaceType(
+    properties.type ||
+    properties.osm_value ||
+    properties.osm_key
+  );
+
+  const city = clean(
+    properties.name ||
+    properties.city ||
+    properties.locality ||
+    properties.district ||
+    ""
+  );
+
+  const countryCode = clean(properties.countrycode || "").toLowerCase();
+  if (!city || (countryCode && countryCode !== "pl")) return null;
+
+  const lat = Number(coordinates[1]);
+  const lon = Number(coordinates[0]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  const postcode = clean(properties.postcode || "");
+  const county = clean(properties.county || "");
+  const stateName = clean(properties.state || "");
+  const district = clean(properties.district || "");
+  const locality = clean(properties.locality || "");
+
+  return buildCitySuggestion({
+    city,
+    postcode,
+    county,
+    stateName,
+    district,
+    municipality: locality,
+    lat,
+    lon,
+    type,
+    importance: Number(properties.extent ? 0.55 : 0.35),
+    source: "photon"
+  });
+}
+
+function normalizeNominatimCitySuggestion(row) {
   const address = row.address || {};
   const city = clean(
     row.namedetails?.name ||
@@ -1321,24 +1446,55 @@ function normalizeCitySuggestion(row) {
     address.town ||
     address.village ||
     address.municipality ||
+    address.suburb ||
     ""
   );
 
-  const postcode = clean(address.postcode || "");
-  const county = clean(address.county || "");
-  const municipality = clean(address.municipality || "");
-  const stateName = clean(address.state || "");
-  const district = clean(address.city_district || "");
+  const countryCode = clean(address.country_code || "").toLowerCase();
+  if (!city || (countryCode && countryCode !== "pl")) return null;
+
   const lat = Number(row.lat);
   const lon = Number(row.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
-  const details = [
-    postcode,
-    district,
+  return buildCitySuggestion({
+    city,
+    postcode: clean(address.postcode || ""),
+    county: clean(address.county || ""),
+    stateName: clean(address.state || ""),
+    district: clean(address.city_district || address.suburb || ""),
+    municipality: clean(address.municipality || ""),
+    lat,
+    lon,
+    type: normalizePlaceType(row.type || row.addresstype || row.class),
+    importance: Number(row.importance || 0),
+    source: "nominatim"
+  });
+}
+
+function buildCitySuggestion({
+  city,
+  postcode,
+  county,
+  stateName,
+  district,
+  municipality,
+  lat,
+  lon,
+  type,
+  importance,
+  source
+}) {
+  const regionParts = uniqueNonEmpty([
+    district && district !== city ? district : "",
     municipality && municipality !== city ? municipality : "",
     county && county !== city ? county : "",
     stateName
-  ].filter(Boolean);
+  ]);
+
+  const inputLabel = postcode
+    ? `${city}, ${postcode}`
+    : city;
 
   return {
     city,
@@ -1349,56 +1505,138 @@ function normalizeCitySuggestion(row) {
     district,
     lat,
     lon,
-    displayName: clean(row.display_name || city),
-    subtitle: [...new Set(details)].join(" • "),
+    type,
+    typeLabel: placeTypeLabel(type),
+    importance,
+    source,
+    inputLabel,
+    subtitle: regionParts.join(" • "),
+    displayName: uniqueNonEmpty([
+      city,
+      postcode,
+      ...regionParts
+    ]).join(", "),
     key: [
       city.toLocaleLowerCase("pl"),
       postcode,
       county.toLocaleLowerCase("pl"),
-      lat.toFixed(4),
-      lon.toFixed(4)
+      stateName.toLocaleLowerCase("pl")
     ].join("|")
   };
 }
 
-function renderCitySuggestions() {
+function rankAndDeduplicateCities(items, query) {
+  const queryText = normalizeSearchText(query);
+  const queryPostcode = extractPostcode(query);
+  const queryName = normalizeSearchText(
+    query.replace(/\b\d{2}-?\d{3}\b/g, "")
+  );
+
+  const deduplicated = new Map();
+
+  items.forEach(item => {
+    if (!item || !isPolishCoordinate(item.lat, item.lon)) return;
+
+    const existing = deduplicated.get(item.key);
+    if (!existing || cityResultScore(item, queryName, queryPostcode) >
+      cityResultScore(existing, queryName, queryPostcode)) {
+      deduplicated.set(item.key, item);
+    }
+  });
+
+  return [...deduplicated.values()]
+    .map(item => ({
+      ...item,
+      score: cityResultScore(item, queryName || queryText, queryPostcode)
+    }))
+    .sort((a, b) =>
+      b.score - a.score ||
+      a.city.localeCompare(b.city, "pl") ||
+      a.postcode.localeCompare(b.postcode, "pl")
+    );
+}
+
+function cityResultScore(item, queryName, queryPostcode) {
+  const cityName = normalizeSearchText(item.city);
+  let score = Math.round((item.importance || 0) * 30);
+
+  if (queryName) {
+    if (cityName === queryName) score += 160;
+    else if (cityName.startsWith(queryName)) score += 95;
+    else if (cityName.includes(queryName)) score += 55;
+    else score -= 15;
+  }
+
+  if (queryPostcode) {
+    if (item.postcode === queryPostcode) score += 180;
+    else if (item.postcode.startsWith(queryPostcode.slice(0, 2))) score += 25;
+  }
+
+  const typeScores = {
+    city: 55,
+    town: 48,
+    village: 35,
+    municipality: 25,
+    suburb: 12,
+    district: 8,
+    place: 5
+  };
+
+  score += typeScores[item.type] || 0;
+  if (item.postcode) score += 12;
+  if (item.state) score += 5;
+  if (item.source === "nominatim") score += 2;
+
+  return score;
+}
+
+function renderCitySuggestions(sectionTitle = "") {
   const container = $("#citySuggestions");
 
   if (!state.citySuggestions.length) {
     container.innerHTML = `
       <div class="city-suggestion-empty">
-        Nie znaleziono pasującej miejscowości w Polsce.
+        <strong>Nie znaleziono miejscowości</strong>
+        <span>Sprawdź pisownię albo wpisz kod pocztowy, np. 44-200.</span>
       </div>
     `;
     openCitySuggestions();
     setLocationStatus(
-      "Brak pasujących miejscowości. Sprawdź pisownię.",
+      "Brak jednoznacznego wyniku. Zmień nazwę lub wpisz kod pocztowy.",
       "error"
     );
     return;
   }
 
-  container.innerHTML = state.citySuggestions
+  const header = sectionTitle
+    ? `<div class="city-suggestions-header">${escapeHtml(sectionTitle)}</div>`
+    : `<div class="city-suggestions-header">Wybierz konkretną miejscowość</div>`;
+
+  container.innerHTML = header + state.citySuggestions
     .map((item, index) => `
       <button
         type="button"
-        class="city-suggestion"
+        class="city-suggestion ${index === 0 ? "active" : ""}"
         role="option"
-        aria-selected="false"
+        aria-selected="${index === 0}"
         data-index="${index}"
       >
-        <span class="city-suggestion-main">
-          <strong>${escapeHtml(item.city)}</strong>
-          ${item.postcode ? `<b>${escapeHtml(item.postcode)}</b>` : ""}
+        <span class="city-place-icon" aria-hidden="true">⌖</span>
+        <span class="city-suggestion-copy">
+          <span class="city-suggestion-main">
+            <strong>${escapeHtml(item.city)}</strong>
+            ${item.postcode ? `<b>${escapeHtml(item.postcode)}</b>` : ""}
+          </span>
+          <small>${escapeHtml(item.subtitle || "Polska")}</small>
         </span>
-        <small>${escapeHtml(item.subtitle || item.displayName)}</small>
+        <span class="city-type-badge">${escapeHtml(item.recent ? "ostatnio" : item.typeLabel)}</span>
       </button>
     `)
     .join("");
 
   openCitySuggestions();
   setLocationStatus(
-    "Wybierz właściwą miejscowość z listy.",
+    "Wybierz właściwą miejscowość. Kod pocztowy i region pomagają uniknąć pomyłki.",
     "neutral"
   );
 }
@@ -1417,6 +1655,7 @@ function selectCitySuggestion(index) {
   const item = state.citySuggestions[index];
   if (!item) return;
 
+  state.selectedCity = { ...item };
   state.detectedLocation = {
     lat: item.lat,
     lon: item.lon,
@@ -1425,19 +1664,49 @@ function selectCitySuggestion(index) {
     displayName: item.displayName
   };
 
-  $("#city").value = item.city;
+  $("#city").value = item.inputLabel;
+  renderSelectedCity();
+  saveRecentCity(item);
   closeCitySuggestions();
 
-  const selectedLabel = [
-    item.city,
-    item.postcode,
-    item.state
-  ].filter(Boolean).join(", ");
-
   setLocationStatus(
-    `Wybrano: ${selectedLabel}. Wyszukiwanie użyje dokładnej lokalizacji.`,
+    `Wybrano dokładną lokalizację: ${item.displayName}.`,
     "success"
   );
+}
+
+function renderSelectedCity() {
+  const card = $("#selectedCityCard");
+  const item = state.selectedCity;
+
+  card.classList.toggle("hidden", !item);
+  if (!item) return;
+
+  $("#selectedCityName").textContent = item.postcode
+    ? `${item.city} — ${item.postcode}`
+    : item.city;
+
+  $("#selectedCityDetails").textContent =
+    uniqueNonEmpty([
+      item.typeLabel,
+      item.county,
+      item.state
+    ]).join(" • ");
+}
+
+function clearSelectedCity() {
+  resetSelectedCity(true);
+  $("#city").focus();
+}
+
+function resetSelectedCity(clearInput = false) {
+  state.selectedCity = null;
+  state.detectedLocation = null;
+  renderSelectedCity();
+
+  if (clearInput) {
+    $("#city").value = "";
+  }
 }
 
 function openCitySuggestions() {
@@ -1450,6 +1719,170 @@ function closeCitySuggestions() {
   $("#citySuggestions").classList.add("hidden");
   $("#city").setAttribute("aria-expanded", "false");
 }
+
+function setCityLoading(loading) {
+  $("#cityInputLoader").classList.toggle("hidden", !loading);
+}
+
+async function ensureSelectedSearchLocation(cityInput) {
+  const input = clean(cityInput);
+
+  if (
+    state.selectedCity &&
+    (
+      input.toLocaleLowerCase("pl") ===
+        state.selectedCity.inputLabel.toLocaleLowerCase("pl") ||
+      input.toLocaleLowerCase("pl") ===
+        state.selectedCity.city.toLocaleLowerCase("pl")
+    )
+  ) {
+    return {
+      lat: state.selectedCity.lat,
+      lon: state.selectedCity.lon,
+      displayName: state.selectedCity.displayName
+    };
+  }
+
+  const suggestions = await loadCitySuggestions(input);
+  const exactMatches = suggestions.filter(item => {
+    const normalizedInput = normalizeSearchText(input);
+    const inputPostcode = extractPostcode(input);
+    const sameName =
+      normalizeSearchText(item.city) ===
+      normalizeSearchText(input.replace(/\b\d{2}-?\d{3}\b/g, ""));
+    const samePostcode = !inputPostcode || item.postcode === inputPostcode;
+    return sameName && samePostcode;
+  });
+
+  if (exactMatches.length === 1) {
+    state.citySuggestions = exactMatches;
+    selectCitySuggestion(0);
+    return {
+      lat: exactMatches[0].lat,
+      lon: exactMatches[0].lon,
+      displayName: exactMatches[0].displayName
+    };
+  }
+
+  openCitySuggestions();
+  setLocationStatus(
+    "Przed wyszukiwaniem wybierz konkretną miejscowość z listy.",
+    "error"
+  );
+  throw new Error("CITY_SELECTION_REQUIRED");
+}
+
+function normalizeCityQuery(value) {
+  return clean(value)
+    .toLocaleLowerCase("pl")
+    .replace(/\s+/g, " ");
+}
+
+function normalizeSearchText(value) {
+  return clean(value)
+    .toLocaleLowerCase("pl")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9ąćęłńóśźż\s-]/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function containsPostcode(value) {
+  return /\b\d{2}-?\d{3}\b/.test(value);
+}
+
+function extractPostcode(value) {
+  const match = value.match(/\b(\d{2})-?(\d{3})\b/);
+  return match ? `${match[1]}-${match[2]}` : "";
+}
+
+function normalizePlaceType(type) {
+  const value = clean(type).toLowerCase();
+
+  if (["city", "municipality"].includes(value)) return "city";
+  if (["town"].includes(value)) return "town";
+  if (["village", "hamlet"].includes(value)) return "village";
+  if (["suburb", "quarter", "neighbourhood"].includes(value)) return "suburb";
+  if (["district", "county"].includes(value)) return "district";
+  if (["administrative"].includes(value)) return "municipality";
+
+  return "place";
+}
+
+function placeTypeLabel(type) {
+  const labels = {
+    city: "miasto",
+    town: "miasto",
+    village: "wieś",
+    municipality: "gmina",
+    suburb: "dzielnica",
+    district: "powiat",
+    place: "miejscowość"
+  };
+
+  return labels[type] || "miejscowość";
+}
+
+function isPolishCoordinate(lat, lon) {
+  return (
+    Number.isFinite(lat) &&
+    Number.isFinite(lon) &&
+    lat >= 48.8 &&
+    lat <= 55.1 &&
+    lon >= 13.8 &&
+    lon <= 24.5
+  );
+}
+
+function uniqueNonEmpty(items) {
+  return [...new Set(items.map(clean).filter(Boolean))];
+}
+
+function loadRecentCities() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem("leadfinder_recent_cities") || "[]");
+    return Array.isArray(parsed) ? parsed.slice(0, 5) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentCity(item) {
+  const safeItem = {
+    city: item.city,
+    postcode: item.postcode,
+    county: item.county,
+    municipality: item.municipality,
+    state: item.state,
+    district: item.district,
+    lat: item.lat,
+    lon: item.lon,
+    type: item.type,
+    typeLabel: item.typeLabel,
+    inputLabel: item.inputLabel,
+    subtitle: item.subtitle,
+    displayName: item.displayName,
+    key: item.key,
+    importance: item.importance || 0,
+    source: item.source || "recent"
+  };
+
+  state.recentCities = [
+    safeItem,
+    ...state.recentCities.filter(city => city.key !== safeItem.key)
+  ].slice(0, 5);
+
+  try {
+    localStorage.setItem(
+      "leadfinder_recent_cities",
+      JSON.stringify(state.recentCities)
+    );
+  } catch {
+    // Brak miejsca w localStorage nie powinien blokować aplikacji.
+  }
+}
+
 
 async function detectCurrentLocation() {
   clearMessages();
@@ -1484,17 +1917,34 @@ async function detectCurrentLocation() {
     const lon = Number(position.coords.longitude);
     const place = await reverseGeocodePosition(lat, lon);
 
+    const detectedItem = buildCitySuggestion({
+      city: place.city,
+      postcode: place.postcode || "",
+      county: place.county || "",
+      stateName: place.state || "",
+      district: place.district || "",
+      municipality: place.municipality || "",
+      lat,
+      lon,
+      type: place.type || "city",
+      importance: 1,
+      source: "geolocation"
+    });
+
+    state.selectedCity = detectedItem;
     state.detectedLocation = {
       lat,
       lon,
-      city: place.city,
-      postcode: place.postcode || "",
-      displayName: place.displayName
+      city: detectedItem.city,
+      postcode: detectedItem.postcode,
+      displayName: detectedItem.displayName
     };
 
-    $("#city").value = place.city;
+    $("#city").value = detectedItem.inputLabel;
+    renderSelectedCity();
+    saveRecentCity(detectedItem);
     setLocationStatus(
-      `Ustawiono: ${place.city}${place.postcode ? `, ${place.postcode}` : ""}. Możesz teraz rozpocząć wyszukiwanie.`,
+      `Ustawiono dokładną lokalizację: ${detectedItem.displayName}.`,
       "success"
     );
   } catch (error) {
@@ -1546,6 +1996,11 @@ async function reverseGeocodePosition(lat, lon) {
     return {
       city,
       postcode: clean(address.postcode || ""),
+      county: clean(address.county || ""),
+      state: clean(address.state || ""),
+      district: clean(address.city_district || address.suburb || ""),
+      municipality: clean(address.municipality || ""),
+      type: normalizePlaceType(data.type || data.addresstype || "city"),
       displayName: clean(data.display_name || city)
     };
   } catch (error) {

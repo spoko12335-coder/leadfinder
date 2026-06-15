@@ -1,4 +1,4 @@
-const CACHE = "leadfinder-v5-7-city-autocomplete";
+const CACHE = "leadfinder-v5-8-precise-city-picker";
 const ASSETS = [
   "./",
   "./index.html",

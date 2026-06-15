@@ -1850,3 +1850,202 @@ body.guest-mode {
     max-height: 280px;
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 5.8 — DOKŁADNY WYBÓR MIEJSCOWOŚCI
+   ========================================================= */
+
+.city-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.city-input-wrap {
+  position: relative;
+}
+
+.city-input-wrap input {
+  padding-left: 42px;
+  padding-right: 42px;
+}
+
+.city-search-icon {
+  position: absolute;
+  z-index: 2;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #4d9b8d;
+  font-size: 22px;
+  pointer-events: none;
+}
+
+.city-input-loader {
+  position: absolute;
+  z-index: 2;
+  right: 14px;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin-top: -9px;
+  border: 2px solid rgba(36,157,138,.18);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: cityLoaderSpin .75s linear infinite;
+}
+
+@keyframes cityLoaderSpin {
+  to { transform: rotate(360deg); }
+}
+
+.city-suggestions {
+  padding: 8px;
+}
+
+.city-suggestions-header {
+  padding: 7px 9px 9px;
+  color: #768d91;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .75px;
+  text-transform: uppercase;
+}
+
+.city-suggestion {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 62px;
+  margin: 2px 0;
+  border: 1px solid transparent;
+}
+
+.city-suggestion:hover,
+.city-suggestion.active {
+  border-color: rgba(36,157,138,.16);
+  background: linear-gradient(135deg, #e8f8f2, #f7fcfa);
+}
+
+.city-place-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: #e2f5ee;
+  color: #218b75;
+  font-size: 20px;
+}
+
+.city-suggestion-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.city-suggestion-main {
+  justify-content: flex-start;
+}
+
+.city-suggestion-main b {
+  background: #eaf4ff;
+  color: #317799;
+}
+
+.city-suggestion small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.city-type-badge {
+  align-self: center;
+  padding: 5px 7px;
+  border-radius: 999px;
+  background: #f1effb;
+  color: #715ea5;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.city-suggestion-empty {
+  display: grid;
+  gap: 5px;
+  padding: 18px 13px;
+}
+
+.city-suggestion-empty strong {
+  color: #35585d;
+}
+
+.selected-city-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border: 1px solid rgba(36,157,138,.20);
+  border-radius: 13px;
+  background: linear-gradient(135deg, #e7f8f1, #f5fcf9);
+}
+
+.selected-city-marker {
+  display: grid;
+  place-items: center;
+  width: 33px;
+  height: 33px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #208a74;
+  box-shadow: 0 4px 12px rgba(43,105,96,.08);
+}
+
+.selected-city-card > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.selected-city-card strong {
+  color: #1b6758;
+  font-size: 12px;
+}
+
+.selected-city-card small {
+  overflow: hidden;
+  color: #64827b;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-city-card button {
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 29px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,.8);
+  color: #7b9295;
+  font-size: 19px;
+}
+
+.selected-city-card button:hover {
+  background: #ffffff;
+  color: #c15066;
+}
+
+@media (max-width: 560px) {
+  .city-suggestion {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .city-type-badge {
+    display: none;
+  }
+}

@@ -129,40 +129,56 @@
 
             <p id="purposeHint" class="mode-hint"></p>
 
-            <div class="city-location-block">
-              <div class="city-autocomplete">
-                <label class="city-input-label">
-                  Miasto
-                  <input
-                    id="city"
-                    name="city"
-                    type="text"
-                    placeholder="Np. Rybnik"
-                    autocomplete="off"
-                    aria-autocomplete="list"
-                    aria-controls="citySuggestions"
-                    aria-expanded="false"
-                    required
-                  />
-                </label>
+            <div class="city-picker">
+              <div class="city-location-block">
+                <div class="city-autocomplete">
+                  <label class="city-input-label">
+                    Miasto lub kod pocztowy
+                    <div class="city-input-wrap">
+                      <span class="city-search-icon" aria-hidden="true">⌕</span>
+                      <input
+                        id="city"
+                        name="city"
+                        type="text"
+                        placeholder="Np. Rybnik albo 44-200"
+                        autocomplete="off"
+                        spellcheck="false"
+                        aria-autocomplete="list"
+                        aria-controls="citySuggestions"
+                        aria-expanded="false"
+                        required
+                      />
+                      <span id="cityInputLoader" class="city-input-loader hidden" aria-hidden="true"></span>
+                    </div>
+                  </label>
 
-                <div
-                  id="citySuggestions"
-                  class="city-suggestions hidden"
-                  role="listbox"
-                  aria-label="Podpowiedzi miejscowości"
-                ></div>
+                  <div
+                    id="citySuggestions"
+                    class="city-suggestions hidden"
+                    role="listbox"
+                    aria-label="Podpowiedzi miejscowości"
+                  ></div>
+                </div>
+
+                <button id="locateBtn" class="location-button" type="button">
+                  <span class="location-icon" aria-hidden="true">⌖</span>
+                  <span>Moja lokalizacja</span>
+                </button>
               </div>
 
-              <button id="locateBtn" class="location-button" type="button">
-                <span class="location-icon" aria-hidden="true">⌖</span>
-                <span>Użyj mojej lokalizacji</span>
-              </button>
-            </div>
+              <div id="selectedCityCard" class="selected-city-card hidden">
+                <span class="selected-city-marker" aria-hidden="true">⌖</span>
+                <div>
+                  <strong id="selectedCityName"></strong>
+                  <small id="selectedCityDetails"></small>
+                </div>
+                <button id="clearSelectedCity" type="button" aria-label="Usuń wybraną miejscowość">×</button>
+              </div>
 
-            <p id="locationStatus" class="location-status" aria-live="polite">
-              Wpisz co najmniej 3 litery i wybierz właściwą miejscowość z listy.
-            </p>
+              <p id="locationStatus" class="location-status" aria-live="polite">
+                Zacznij wpisywać nazwę lub kod pocztowy, a następnie wybierz konkretną miejscowość.
+              </p>
+            </div>
 
             <div class="grid-2">
               <label>
@@ -323,7 +339,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 5.7</p>
+          <p class="eyebrow">WERSJA 5.8</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
