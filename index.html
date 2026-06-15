@@ -399,7 +399,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 6.7</p>
+          <p class="eyebrow">WERSJA 6.8</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -429,7 +429,7 @@
             <div><strong>✓</strong><span>Odległość firmy od wybranej lokalizacji</span></div>
             <div><strong>✓</strong><span>Polskie kategorie i prawidłowe oznaczenia źródeł</span></div>
             <div><strong>✓</strong><span>Opis firmy i godziny otwarcia, gdy dane są dostępne</span></div>
-            <div><strong>✓</strong><span>Pakiety 3, 50, 100, 200, 500 i 1000 wyszukiwań</span></div>
+            <div><strong>✓</strong><span>Proste pakiety: 3 darmowe oraz 10, 30 i 100 wyszukiwań</span></div>
           </div>
           <div class="notice">
             Wyższy pakiet można zamówić i opłacić zwykłym przelewem bankowym.
@@ -519,53 +519,44 @@
   <dialog id="plansDialog">
     <div class="dialog-head">
       <div>
-        <p class="eyebrow">PAKIETY MIESIĘCZNE</p>
-        <h2>Wybierz odpowiedni limit</h2>
+        <p class="eyebrow">PAKIETY NA 30 DNI</p>
+        <h2>Wybierz jeden z trzech pakietów</h2>
       </div>
       <button id="closePlansDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
     </div>
 
-    <div class="plans-grid">
+    <div class="plans-grid simplified-plans-grid">
       <article class="plan-card current-plan" data-plan="free">
-        <span class="plan-label">BEZPŁATNY</span>
+        <span class="plan-label">DARMOWY</span>
         <h3>3 wyszukiwania</h3>
         <strong>0 zł</strong>
+        <p>Na start i do przetestowania aplikacji.</p>
         <button class="secondary" type="button" disabled>Aktywny startowo</button>
       </article>
 
       <article class="plan-card" data-plan="start">
-        <span class="plan-label">START</span>
-        <h3>50 wyszukiwań</h3>
-        <strong>19,99 zł / mies.</strong>
-        <button class="buy-plan secondary" data-plan-code="start" type="button">Kup przelewem</button>
+        <span class="plan-label">MINI</span>
+        <h3>10 wyszukiwań</h3>
+        <strong>20 zł / 30 dni</strong>
+        <p>Dla osoby, która szuka klientów okazjonalnie.</p>
+        <button class="buy-plan secondary" data-plan-code="start" type="button">Kup pakiet</button>
       </article>
 
-      <article class="plan-card" data-plan="standard">
+      <article class="plan-card recommended-plan" data-plan="standard">
         <span class="plan-label">STANDARD</span>
-        <h3>100 wyszukiwań</h3>
-        <strong>34,99 zł / mies.</strong>
-        <button class="buy-plan secondary" data-plan-code="standard" type="button">Kup przelewem</button>
+        <span class="recommended-label">NAJPOPULARNIEJSZY</span>
+        <h3>30 wyszukiwań</h3>
+        <strong>49 zł / 30 dni</strong>
+        <p>Dla regularnego pozyskiwania nowych kontaktów.</p>
+        <button class="buy-plan primary" data-plan-code="standard" type="button">Kup pakiet</button>
       </article>
 
       <article class="plan-card" data-plan="pro">
         <span class="plan-label">PRO</span>
-        <h3>200 wyszukiwań</h3>
-        <strong>59,99 zł / mies.</strong>
-        <button class="buy-plan secondary" data-plan-code="pro" type="button">Kup przelewem</button>
-      </article>
-
-      <article class="plan-card" data-plan="business">
-        <span class="plan-label">BUSINESS</span>
-        <h3>500 wyszukiwań</h3>
-        <strong>139,99 zł / mies.</strong>
-        <button class="buy-plan secondary" data-plan-code="business" type="button">Kup przelewem</button>
-      </article>
-
-      <article class="plan-card" data-plan="agency">
-        <span class="plan-label">AGENCY</span>
-        <h3>1000 wyszukiwań</h3>
-        <strong>249,99 zł / mies.</strong>
-        <button class="buy-plan secondary" data-plan-code="agency" type="button">Kup przelewem</button>
+        <h3>100 wyszukiwań</h3>
+        <strong>119 zł / 30 dni</strong>
+        <p>Dla agencji i intensywnego prospectingu B2B.</p>
+        <button class="buy-plan secondary" data-plan-code="pro" type="button">Kup pakiet</button>
       </article>
     </div>
 
@@ -578,7 +569,7 @@
       <p id="myOrdersEmpty" class="hint">Nie masz jeszcze zamówień.</p>
     </section>
 
-    <p class="hint">Pakiet jest aktywowany ręcznie po zaksięgowaniu przelewu i działa przez 30 dni.</p>
+    <p class="hint">Pakiet działa przez 30 dni. Obecnie jest aktywowany po zaksięgowaniu płatności; automatyzację BLIK i przelewów podłączymy po odblokowaniu klucza operatora.</p>
   </dialog>
 
   <dialog id="paymentDialog">
