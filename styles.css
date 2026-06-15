@@ -3402,3 +3402,42 @@ main {
     grid-column: auto;
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 7.2.2 — WIDOCZNY ZAPIS USTAWIEŃ PŁATNOŚCI
+   ========================================================= */
+
+.business-settings-message {
+  display: block;
+  margin-top: 11px;
+  padding: 11px 13px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.business-message-loading {
+  border-color: rgba(78,132,190,.22);
+  background: #eef6ff;
+  color: #3d6f9d;
+}
+
+.business-message-success {
+  border-color: rgba(36,157,138,.22);
+  background: #ecf9f4;
+  color: #197a59;
+}
+
+.business-message-error {
+  border-color: rgba(223,93,115,.22);
+  background: #fff1f4;
+  color: #a94357;
+}
+
+#saveBusinessSettingsBtn:disabled {
+  cursor: wait;
+  opacity: .72;
+}

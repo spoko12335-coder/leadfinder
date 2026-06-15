@@ -378,10 +378,24 @@ function bindEvents() {
     "click",
     handleUnregisteredSaleTableClick
   );
-  $("#settingSalesEnabled").addEventListener(
-    "change",
-    updateBusinessSettingsReadiness
-  );
+  [
+    "#settingSellerName",
+    "#settingCorrespondenceAddress",
+    "#settingComplaintsEmail",
+    "#settingPaymentEmail",
+    "#settingBankAccount",
+    "#settingBankName",
+    "#settingInstructions",
+    "#settingSalesEnabled"
+  ].forEach(selector => {
+    const field = $(selector);
+    if (!field) return;
+
+    field.addEventListener(
+      field.type === "checkbox" ? "change" : "input",
+      updateBusinessSettingsReadiness
+    );
+  });
   $("#copyPaymentBtn").addEventListener("click", copyPaymentDetails);
   $("#loginForm").addEventListener("submit", login);
   $("#registerForm").addEventListener("submit", register);
@@ -1407,13 +1421,64 @@ function fillPaymentSettingsForm() {
 async function savePaymentSettings(event) {
   event.preventDefault();
 
+  const form = event.currentTarget;
+  const button =
+    form.querySelector('button[type="submit"]');
   const salesEnabled = $("#settingSalesEnabled").checked;
+  const sellerName =
+    $("#settingSellerName").value.trim() || "Kamil Mazur";
   const correspondenceAddress =
     $("#settingCorrespondenceAddress").value.trim();
   const complaintsEmail =
     $("#settingComplaintsEmail").value.trim();
-  const bankAccount =
-    $("#settingBankAccount").value.replace(/\s+/g, "");
+  const paymentEmail =
+    $("#settingPaymentEmail").value.trim();
+  const bankAccount = normalizeBankAccountInput(
+    $("#settingBankAccount").value
+  );
+
+  clearBusinessSettingsMessage();
+
+  if (!state.profile?.is_admin) {
+    showBusinessSettingsMessage(
+      "Nie masz uprawnień administratora.",
+      "error"
+    );
+    return;
+  }
+
+  if (
+    complaintsEmail &&
+    !isValidEmailAddress(complaintsEmail)
+  ) {
+    showBusinessSettingsMessage(
+      "E-mail reklamacyjny ma nieprawidłowy format.",
+      "error"
+    );
+    $("#settingComplaintsEmail").focus();
+    return;
+  }
+
+  if (
+    paymentEmail &&
+    !isValidEmailAddress(paymentEmail)
+  ) {
+    showBusinessSettingsMessage(
+      "E-mail dotyczący płatności ma nieprawidłowy format.",
+      "error"
+    );
+    $("#settingPaymentEmail").focus();
+    return;
+  }
+
+  if (bankAccount && bankAccount.length !== 26) {
+    showBusinessSettingsMessage(
+      `Numer konta ma ${bankAccount.length} cyfr. Wymagane jest dokładnie 26 cyfr.`,
+      "error"
+    );
+    $("#settingBankAccount").focus();
+    return;
+  }
 
   if (
     salesEnabled &&
@@ -1423,40 +1488,149 @@ async function savePaymentSettings(event) {
       bankAccount.length !== 26
     )
   ) {
-    showToast(
-      "Aby uruchomić sprzedaż, uzupełnij adres, e-mail reklamacyjny i 26-cyfrowy numer konta."
+    showBusinessSettingsMessage(
+      "Aby włączyć sprzedaż, uzupełnij rzeczywisty adres, poprawny e-mail reklamacyjny i 26-cyfrowy numer konta.",
+      "error"
     );
     return;
   }
 
-  const { data, error } = await supabaseClient.rpc(
-    "admin_save_business_settings",
-    {
-      p_seller_name: $("#settingSellerName").value.trim(),
-      p_correspondence_address: correspondenceAddress,
-      p_complaints_email: complaintsEmail,
-      p_bank_account: bankAccount,
-      p_bank_name: $("#settingBankName").value.trim(),
-      p_payment_email: $("#settingPaymentEmail").value.trim(),
-      p_instructions: $("#settingInstructions").value.trim(),
-      p_sales_enabled: salesEnabled
-    }
+  const previousLabel = button.textContent;
+  button.disabled = true;
+  button.textContent = "Zapisywanie…";
+
+  showBusinessSettingsMessage(
+    "Trwa zapisywanie ustawień w Supabase…",
+    "loading"
   );
 
-  if (error) {
-    console.error(error);
-    showToast(
-      String(error.message || "").includes("SELLER_DETAILS_INCOMPLETE")
-        ? "Nie można uruchomić sprzedaży bez kompletnych danych sprzedawcy."
-        : "Nie udało się zapisać ustawień sprzedaży."
+  try {
+    const { data, error } = await supabaseClient.rpc(
+      "admin_save_business_settings",
+      {
+        p_seller_name: sellerName,
+        p_correspondence_address: correspondenceAddress || null,
+        p_complaints_email: complaintsEmail || null,
+        p_bank_account: bankAccount || null,
+        p_bank_name:
+          $("#settingBankName").value.trim() || null,
+        p_payment_email: paymentEmail || null,
+        p_instructions:
+          $("#settingInstructions").value.trim() || null,
+        p_sales_enabled: salesEnabled
+      }
     );
-    return;
+
+    if (error) throw error;
+
+    state.paymentSettings =
+      Array.isArray(data) ? data[0] : data;
+
+    // Ponowny odczyt potwierdza, że zapis trafił do bazy,
+    // a nie tylko zakończył się odpowiedzią RPC.
+    await loadPaymentSettings();
+
+    if (!state.paymentSettings) {
+      throw new Error("PAYMENT_SETTINGS_RELOAD_FAILED");
+    }
+
+    fillPaymentSettingsForm();
+    updatePlanPurchaseAvailability();
+
+    const savedEnabled =
+      Boolean(state.paymentSettings.sales_enabled);
+
+    if (salesEnabled && !savedEnabled) {
+      throw new Error("SALES_ENABLE_NOT_PERSISTED");
+    }
+
+    showBusinessSettingsMessage(
+      savedEnabled
+        ? "Dane zapisane. Sprzedaż płatnych pakietów jest aktywna."
+        : "Dane zapisane. Sprzedaż pozostaje wyłączona.",
+      "success"
+    );
+  } catch (error) {
+    console.error("Błąd zapisu ustawień sprzedaży:", error);
+
+    showBusinessSettingsMessage(
+      businessSettingsErrorMessage(error),
+      "error"
+    );
+  } finally {
+    button.disabled = false;
+    button.textContent = previousLabel;
+    updateBusinessSettingsReadiness();
+  }
+}
+
+function normalizeBankAccountInput(value) {
+  return String(value || "").replace(/\D+/g, "");
+}
+
+function isValidEmailAddress(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
+    String(value || "").trim()
+  );
+}
+
+function businessSettingsErrorMessage(error) {
+  const text = [
+    error?.message,
+    error?.details,
+    error?.hint,
+    error?.code
+  ].filter(Boolean).join(" ");
+
+  if (/ADMIN_REQUIRED|42501|permission denied/i.test(text)) {
+    return "Supabase odrzucił zapis: konto nie ma uprawnień administratora.";
   }
 
-  state.paymentSettings = Array.isArray(data) ? data[0] : data;
-  fillPaymentSettingsForm();
-  updatePlanPurchaseAvailability();
-  showToast("Ustawienia działalności i płatności zapisane.");
+  if (/SELLER_DETAILS_INCOMPLETE/i.test(text)) {
+    return "Nie można włączyć sprzedaży bez kompletnego adresu, e-maila reklamacyjnego i 26-cyfrowego numeru konta.";
+  }
+
+  if (
+    /PGRST202|admin_save_business_settings|function.*not found|schema cache/i.test(
+      text
+    )
+  ) {
+    return "W Supabase brakuje aktualnej funkcji zapisu. Uruchom poprawiony skrypt SQL LeadFinder 7.2.2 i odśwież stronę.";
+  }
+
+  if (/SALES_ENABLE_NOT_PERSISTED/i.test(text)) {
+    return "Dane zostały zapisane, ale sprzedaż nie została włączona. Uruchom skrypt naprawczy SQL 7.2.2.";
+  }
+
+  if (/PAYMENT_SETTINGS_RELOAD_FAILED/i.test(text)) {
+    return "Zapis mógł się udać, ale nie można ponownie odczytać ustawień. Odśwież stronę i sprawdź panel.";
+  }
+
+  if (/invalid input syntax|22P02/i.test(text)) {
+    return "Jedno z pól ma nieprawidłowy format. Sprawdź numer konta i adresy e-mail.";
+  }
+
+  return `Nie udało się zapisać ustawień. Szczegóły: ${
+    text || "nieznany błąd Supabase"
+  }`;
+}
+
+function showBusinessSettingsMessage(text, type = "success") {
+  const box = $("#businessSettingsMessage");
+  if (!box) return;
+
+  box.textContent = text;
+  box.className =
+    `business-settings-message business-message-${type}`;
+  box.classList.remove("hidden");
+}
+
+function clearBusinessSettingsMessage() {
+  const box = $("#businessSettingsMessage");
+  if (!box) return;
+
+  box.textContent = "";
+  box.className = "business-settings-message hidden";
 }
 
 function updateBusinessSettingsReadiness() {
@@ -1467,13 +1641,14 @@ function updateBusinessSettingsReadiness() {
     $("#settingCorrespondenceAddress")?.value.trim() || "";
   const complaintsEmail =
     $("#settingComplaintsEmail")?.value.trim() || "";
-  const bankAccount =
-    $("#settingBankAccount")?.value.replace(/\s+/g, "") || "";
+  const bankAccount = normalizeBankAccountInput(
+    $("#settingBankAccount")?.value || ""
+  );
   const enabled = Boolean($("#settingSalesEnabled")?.checked);
 
   const complete =
     Boolean(address) &&
-    Boolean(complaintsEmail) &&
+    isValidEmailAddress(complaintsEmail) &&
     bankAccount.length === 26;
 
   status.className =

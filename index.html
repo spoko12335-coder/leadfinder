@@ -408,7 +408,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 7.2</p>
+          <p class="eyebrow">WERSJA 7.2.2</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -949,10 +949,17 @@
           </span>
         </label>
 
-        <button class="primary admin-form-wide" type="submit">
+        <button id="saveBusinessSettingsBtn" class="primary admin-form-wide" type="submit">
           Zapisz dane działalności i płatności
         </button>
       </form>
+
+      <div
+        id="businessSettingsMessage"
+        class="business-settings-message hidden"
+        role="status"
+        aria-live="polite"
+      ></div>
     </section>
 
     <section class="admin-section unregistered-section">
