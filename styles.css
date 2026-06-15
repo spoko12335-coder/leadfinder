@@ -2501,3 +2501,40 @@ body.guest-mode {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+
+/* =========================================================
+   LEADFINDER 6.6 — BEZPIECZNY WYBÓR MIEJSCOWOŚCI
+   ========================================================= */
+
+.city-suggestion-meta {
+  display: grid;
+  justify-items: end;
+  gap: 5px;
+}
+
+.city-suggestion-meta em {
+  color: #18806a;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: .45px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.location-warning {
+  color: #9a641e !important;
+}
+
+.selected-city-card:has(+ .location-warning),
+.city-picker:has(.location-warning) .selected-city-card {
+  border-color: rgba(236,156,58,.32);
+  background: linear-gradient(135deg, #fff4e1, #fffaf1);
+}
+
+@media (max-width: 560px) {
+  .city-suggestion-meta em {
+    display: none;
+  }
+}

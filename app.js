@@ -1325,8 +1325,16 @@ function handleCityKeydown(event) {
 
   if (event.key === "Enter") {
     event.preventDefault();
-    const index = activeIndex >= 0 ? activeIndex : 0;
-    selectCitySuggestion(Number(options[index].dataset.index));
+
+    if (activeIndex < 0) {
+      setLocationStatus(
+        "Wybierz konkretną pozycję strzałkami albo kliknij ją myszką.",
+        "error"
+      );
+      return;
+    }
+
+    selectCitySuggestion(Number(options[activeIndex].dataset.index));
   }
 
   if (event.key === "Escape") {
@@ -1364,23 +1372,23 @@ async function loadCitySuggestions(query) {
   state.citySuggestionController = controller;
 
   try {
-    const photonResults = await fetchPhotonCitySuggestions(
-      query,
-      controller.signal
-    );
+    const [photonResponse, nominatimResponse] = await Promise.allSettled([
+      fetchPhotonCitySuggestions(query, controller.signal),
+      fetchNominatimCitySuggestions(query, controller.signal)
+    ]);
 
-    let nominatimResults = [];
-    if (photonResults.length < 6 || containsPostcode(query)) {
-      nominatimResults = await fetchNominatimCitySuggestions(
-        query,
-        controller.signal
-      );
-    }
+    const photonResults = photonResponse.status === "fulfilled"
+      ? photonResponse.value
+      : [];
+
+    const nominatimResults = nominatimResponse.status === "fulfilled"
+      ? nominatimResponse.value
+      : [];
 
     const suggestions = rankAndDeduplicateCities(
       [...photonResults, ...nominatimResults],
       query
-    ).slice(0, 10);
+    ).slice(0, 12);
 
     state.citySuggestions = suggestions;
     state.citySuggestionCache.set(normalizedQuery, suggestions);
@@ -1438,6 +1446,7 @@ async function fetchNominatimCitySuggestions(query, signal) {
     countrycodes: "pl",
     addressdetails: "1",
     namedetails: "1",
+    extratags: "1",
     dedupe: "1",
     "accept-language": "pl"
   });
@@ -1459,11 +1468,20 @@ async function fetchNominatimCitySuggestions(query, signal) {
 function normalizePhotonCitySuggestion(feature) {
   const properties = feature.properties || {};
   const coordinates = feature.geometry?.coordinates || [];
-  const type = normalizePlaceType(
+  const rawType =
     properties.type ||
     properties.osm_value ||
-    properties.osm_key
-  );
+    properties.osm_key ||
+    "";
+
+  const type = inferCitySuggestionType({
+    rawType,
+    name: properties.name,
+    city: properties.city,
+    town: properties.town,
+    village: properties.village,
+    population: properties.population
+  });
 
   const city = clean(
     properties.name ||
@@ -1496,7 +1514,9 @@ function normalizePhotonCitySuggestion(feature) {
     lat,
     lon,
     type,
-    importance: Number(properties.extent ? 0.55 : 0.35),
+    importance: Number(properties.importance || (properties.extent ? 0.55 : 0.35)),
+    population: Number(properties.population || 0),
+    placeRank: Number(properties.place_rank || 0),
     source: "photon"
   });
 }
@@ -1521,6 +1541,15 @@ function normalizeNominatimCitySuggestion(row) {
   const lon = Number(row.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
+  const type = inferCitySuggestionType({
+    rawType: row.addresstype || row.type || row.class,
+    name: row.namedetails?.name || row.name,
+    city: address.city,
+    town: address.town,
+    village: address.village,
+    population: row.extratags?.population
+  });
+
   return buildCitySuggestion({
     city,
     postcode: clean(address.postcode || ""),
@@ -1530,8 +1559,10 @@ function normalizeNominatimCitySuggestion(row) {
     municipality: clean(address.municipality || ""),
     lat,
     lon,
-    type: normalizePlaceType(row.type || row.addresstype || row.class),
+    type,
     importance: Number(row.importance || 0),
+    population: Number(row.extratags?.population || 0),
+    placeRank: Number(row.place_rank || 0),
     source: "nominatim"
   });
 }
@@ -1547,6 +1578,8 @@ function buildCitySuggestion({
   lon,
   type,
   importance,
+  population = 0,
+  placeRank = 0,
   source
 }) {
   const regionParts = uniqueNonEmpty([
@@ -1572,6 +1605,8 @@ function buildCitySuggestion({
     type,
     typeLabel: placeTypeLabel(type),
     importance,
+    population: Number(population || 0),
+    placeRank: Number(placeRank || 0),
     source,
     inputLabel,
     subtitle: regionParts.join(" • "),
@@ -1615,6 +1650,8 @@ function rankAndDeduplicateCities(items, query) {
     }))
     .sort((a, b) =>
       b.score - a.score ||
+      cityTypePriority(a.type) - cityTypePriority(b.type) ||
+      Number(b.population || 0) - Number(a.population || 0) ||
       a.city.localeCompare(b.city, "pl") ||
       a.postcode.localeCompare(b.postcode, "pl")
     );
@@ -1622,37 +1659,139 @@ function rankAndDeduplicateCities(items, query) {
 
 function cityResultScore(item, queryName, queryPostcode) {
   const cityName = normalizeSearchText(item.city);
-  let score = Math.round((item.importance || 0) * 30);
+  const exactName = Boolean(queryName && cityName === queryName);
+  const startsWithName = Boolean(
+    queryName && cityName.startsWith(queryName)
+  );
 
-  if (queryName) {
-    if (cityName === queryName) score += 160;
-    else if (cityName.startsWith(queryName)) score += 95;
-    else if (cityName.includes(queryName)) score += 55;
-    else score -= 15;
-  }
+  let score = Math.round((item.importance || 0) * 120);
 
-  if (queryPostcode) {
-    if (item.postcode === queryPostcode) score += 180;
-    else if (item.postcode.startsWith(queryPostcode.slice(0, 2))) score += 25;
-  }
+  const exactTypeScores = {
+    city: 520,
+    town: 440,
+    municipality: 230,
+    village: 135,
+    suburb: 70,
+    district: 35,
+    place: 20
+  };
 
-  const typeScores = {
-    city: 55,
-    town: 48,
-    village: 35,
-    municipality: 25,
-    suburb: 12,
-    district: 8,
+  const partialTypeScores = {
+    city: 230,
+    town: 190,
+    municipality: 110,
+    village: 75,
+    suburb: 35,
+    district: 15,
     place: 5
   };
 
-  score += typeScores[item.type] || 0;
-  if (item.postcode) score += 12;
-  if (item.state) score += 5;
-  if (item.source === "nominatim") score += 2;
+  if (exactName) {
+    score += exactTypeScores[item.type] || 0;
+  } else if (startsWithName) {
+    score += partialTypeScores[item.type] || 0;
+  } else if (queryName && cityName.includes(queryName)) {
+    score += 45;
+  } else if (queryName) {
+    score -= 60;
+  }
+
+  if (queryPostcode) {
+    if (item.postcode === queryPostcode) {
+      score += 800;
+    } else if (
+      item.postcode &&
+      item.postcode.startsWith(queryPostcode.slice(0, 2))
+    ) {
+      score += 35;
+    } else {
+      score -= 180;
+    }
+  }
+
+  if (["city", "town"].includes(item.type)) score += 90;
+  if (item.type === "village") score -= exactName ? 0 : 20;
+  if (item.postcode) score += 14;
+  if (item.state) score += 6;
+  if (item.source === "nominatim") score += 8;
+
+  const population = Number(item.population || 0);
+  if (population > 0) {
+    score += Math.min(100, Math.round(Math.log10(population + 1) * 18));
+  }
+
+  const placeRank = Number(item.placeRank || 0);
+  if (placeRank > 0 && placeRank <= 16) score += 20;
 
   return score;
 }
+
+function cityTypePriority(type) {
+  const priorities = {
+    city: 0,
+    town: 1,
+    municipality: 2,
+    village: 3,
+    suburb: 4,
+    district: 5,
+    place: 6
+  };
+
+  return priorities[type] ?? 99;
+}
+
+function inferCitySuggestionType({
+  rawType,
+  name,
+  city,
+  town,
+  village,
+  population
+}) {
+  const normalizedRawType = normalizePlaceType(rawType);
+  const normalizedName = normalizeSearchText(name);
+  const normalizedCity = normalizeSearchText(city);
+  const normalizedTown = normalizeSearchText(town);
+  const normalizedVillage = normalizeSearchText(village);
+  const populationNumber = Number(population || 0);
+
+  if (normalizedRawType === "city" || normalizedRawType === "town") {
+    return normalizedRawType;
+  }
+
+  if (
+    normalizedCity &&
+    normalizedName === normalizedCity &&
+    !normalizedVillage
+  ) {
+    return "city";
+  }
+
+  if (
+    normalizedTown &&
+    normalizedName === normalizedTown &&
+    !normalizedVillage
+  ) {
+    return "town";
+  }
+
+  if (
+    normalizedVillage &&
+    normalizedName === normalizedVillage
+  ) {
+    return "village";
+  }
+
+  if (
+    normalizedRawType === "municipality" &&
+    populationNumber >= 20000
+  ) {
+    return "city";
+  }
+
+  return normalizedRawType;
+}
+
 
 function renderCitySuggestions(sectionTitle = "") {
   const container = $("#citySuggestions");
@@ -1680,9 +1819,9 @@ function renderCitySuggestions(sectionTitle = "") {
     .map((item, index) => `
       <button
         type="button"
-        class="city-suggestion ${index === 0 ? "active" : ""}"
+        class="city-suggestion"
         role="option"
-        aria-selected="${index === 0}"
+        aria-selected="false"
         data-index="${index}"
       >
         <span class="city-place-icon" aria-hidden="true">⌖</span>
@@ -1693,7 +1832,12 @@ function renderCitySuggestions(sectionTitle = "") {
           </span>
           <small>${escapeHtml(item.subtitle || "Polska")}</small>
         </span>
-        <span class="city-type-badge">${escapeHtml(item.recent ? "ostatnio" : item.typeLabel)}</span>
+        <span class="city-suggestion-meta">
+          ${index === 0 && ["city", "town"].includes(item.type)
+            ? `<em>najlepsze dopasowanie</em>`
+            : ""}
+          <span class="city-type-badge">${escapeHtml(item.recent ? "ostatnio" : item.typeLabel)}</span>
+        </span>
       </button>
     `)
     .join("");
@@ -1733,10 +1877,23 @@ function selectCitySuggestion(index) {
   saveRecentCity(item);
   closeCitySuggestions();
 
-  setLocationStatus(
-    `Wybrano dokładną lokalizację: ${item.displayName}.`,
-    "success"
+  const sameNameUrban = state.citySuggestions.find(candidate =>
+    candidate.key !== item.key &&
+    normalizeSearchText(candidate.city) === normalizeSearchText(item.city) &&
+    ["city", "town"].includes(candidate.type)
   );
+
+  if (item.type === "village" && sameNameUrban) {
+    setLocationStatus(
+      `Wybrano wieś ${item.displayName}. Na liście znajduje się też miasto ${sameNameUrban.city}${sameNameUrban.postcode ? `, ${sameNameUrban.postcode}` : ""}. Sprawdź wybór przed wyszukiwaniem.`,
+      "warning"
+    );
+  } else {
+    setLocationStatus(
+      `Wybrano: ${item.typeLabel} ${item.displayName}.`,
+      "success"
+    );
+  }
 }
 
 function renderSelectedCity() {
@@ -1807,34 +1964,17 @@ async function ensureSelectedSearchLocation(cityInput) {
     };
   }
 
-  const suggestions = await loadCitySuggestions(input);
-  const exactMatches = suggestions.filter(item => {
-    const normalizedInput = normalizeSearchText(input);
-    const inputPostcode = extractPostcode(input);
-    const sameName =
-      normalizeSearchText(item.city) ===
-      normalizeSearchText(input.replace(/\b\d{2}-?\d{3}\b/g, ""));
-    const samePostcode = !inputPostcode || item.postcode === inputPostcode;
-    return sameName && samePostcode;
-  });
-
-  if (exactMatches.length === 1) {
-    state.citySuggestions = exactMatches;
-    selectCitySuggestion(0);
-    return {
-      lat: exactMatches[0].lat,
-      lon: exactMatches[0].lon,
-      displayName: exactMatches[0].displayName
-    };
-  }
-
+  await loadCitySuggestions(input);
   openCitySuggestions();
+
   setLocationStatus(
-    "Przed wyszukiwaniem wybierz konkretną miejscowość z listy.",
+    "Kliknij właściwą miejscowość na liście. Aplikacja nie wybiera już automatycznie pierwszego wyniku.",
     "error"
   );
+
   throw new Error("CITY_SELECTION_REQUIRED");
 }
+
 
 function normalizeCityQuery(value) {
   return clean(value)
@@ -1905,7 +2045,8 @@ function uniqueNonEmpty(items) {
 
 function loadRecentCities() {
   try {
-    const parsed = JSON.parse(localStorage.getItem("leadfinder_recent_cities") || "[]");
+    localStorage.removeItem("leadfinder_recent_cities");
+    const parsed = JSON.parse(localStorage.getItem("leadfinder_recent_cities_v2") || "[]");
     return Array.isArray(parsed) ? parsed.slice(0, 5) : [];
   } catch {
     return [];
@@ -1939,7 +2080,7 @@ function saveRecentCity(item) {
 
   try {
     localStorage.setItem(
-      "leadfinder_recent_cities",
+      "leadfinder_recent_cities_v2",
       JSON.stringify(state.recentCities)
     );
   } catch {
@@ -2100,12 +2241,14 @@ function setLocationStatus(text, type = "neutral") {
   status.classList.remove(
     "location-success",
     "location-error",
-    "location-loading"
+    "location-loading",
+    "location-warning"
   );
 
   if (type === "success") status.classList.add("location-success");
   if (type === "error") status.classList.add("location-error");
   if (type === "loading") status.classList.add("location-loading");
+  if (type === "warning") status.classList.add("location-warning");
 }
 
 function geolocationErrorMessage(error) {
