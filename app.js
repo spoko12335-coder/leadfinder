@@ -9,6 +9,8 @@ const SHARED_CACHE_WRITE_TIMEOUT_MS = 2500;
 const MAX_OVERPASS_ELEMENTS = 250;
 const MAX_AUTOMATIC_RADIUS = 30000;
 const READY_LEADS_BEFORE_STOP = 6;
+const TOMTOM_FUNCTION_NAME = "search-tomtom-businesses";
+const TOMTOM_TIMEOUT_MS = 9500;
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -49,6 +51,8 @@ const state = {
   sharedCacheAvailable: true,
   searchDiagnostics: null,
   lastEffectiveRadius: 0,
+  tomtomAvailable: true,
+  lastTomTomError: "",
   deferredPrompt: null
 };
 
@@ -238,6 +242,7 @@ function verifySearchModules() {
   const requiredFunctions = {
     fetchBusinessesFast,
     fetchOverpassHedged,
+    fetchTomTomBusinesses,
     fetchNominatimBusinesses,
     normalizeBusinesses
   };
@@ -2248,6 +2253,9 @@ async function performAdaptiveBusinessSearch({
       accumulated: accumulatedElements.length,
       ready: classified.ready.length,
       verification: classified.verification.length,
+      openstreetmap: response.diagnostics?.overpass ?? null,
+      nominatim: response.diagnostics?.nominatim ?? null,
+      tomtom: response.diagnostics?.tomtom ?? null,
       source: response.source || "brak"
     });
 
@@ -2450,7 +2458,8 @@ async function fetchBusinessesFast(
         diagnostics: cached.diagnostics || {
           combined: cached.elements.length,
           overpass: null,
-          nominatim: null
+          nominatim: null,
+          tomtom: null
         }
       };
     }
@@ -2474,7 +2483,8 @@ async function fetchBusinessesFast(
         diagnostics: {
           combined: sharedCached.elements.length,
           overpass: null,
-          nominatim: null
+          nominatim: null,
+          tomtom: null
         }
       };
     }
@@ -2503,9 +2513,26 @@ async function fetchBusinessesFast(
     "NOMINATIM_TIMEOUT"
   );
 
-  const [overpassResult, nominatimResult] = await Promise.allSettled([
+  const tomtomTask = withPromiseTimeout(
+    fetchTomTomBusinesses({
+      query: categoryDefinition.searchPhrase || categoryDefinition.label,
+      lat,
+      lon,
+      radius,
+      limit: 100
+    }),
+    TOMTOM_TIMEOUT_MS,
+    "TOMTOM_TIMEOUT"
+  );
+
+  const [
+    overpassResult,
+    nominatimResult,
+    tomtomResult
+  ] = await Promise.allSettled([
     overpassTask,
-    nominatimTask
+    nominatimTask,
+    tomtomTask
   ]);
 
   const overpassElements = overpassResult.status === "fulfilled"
@@ -2514,8 +2541,12 @@ async function fetchBusinessesFast(
   const nominatimElements = nominatimResult.status === "fulfilled"
     ? nominatimResult.value
     : [];
+  const tomtomElements = tomtomResult.status === "fulfilled"
+    ? tomtomResult.value
+    : [];
 
   const combined = deduplicateRawBusinessElements([
+    ...tomtomElements,
     ...overpassElements,
     ...nominatimElements
   ]);
@@ -2527,6 +2558,9 @@ async function fetchBusinessesFast(
     if (nominatimResult.status === "rejected") {
       console.warn("Nominatim:", nominatimResult.reason);
     }
+    if (tomtomResult.status === "rejected") {
+      console.warn("TomTom:", tomtomResult.reason);
+    }
 
     throw new Error(
       overpassResult.status === "rejected" &&
@@ -2536,15 +2570,16 @@ async function fetchBusinessesFast(
     );
   }
 
-  const source = overpassElements.length && nominatimElements.length
-    ? "openstreetmap+nominatim"
-    : overpassElements.length
-      ? "openstreetmap"
-      : "nominatim";
+  const source = [
+    tomtomElements.length ? "tomtom" : "",
+    overpassElements.length ? "openstreetmap" : "",
+    nominatimElements.length ? "nominatim" : ""
+  ].filter(Boolean).join("+") || "brak";
 
   const fetchDiagnostics = {
     overpass: overpassElements.length,
     nominatim: nominatimElements.length,
+    tomtom: tomtomElements.length,
     combined: combined.length
   };
 
@@ -2627,7 +2662,11 @@ out center ${MAX_OVERPASS_ELEMENTS};`;
       }
 
       const data = await response.json();
-      return data.elements || [];
+      return (data.elements || []).map(element => ({
+        ...element,
+        source: "openstreetmap",
+        dataSources: ["openstreetmap"]
+      }));
     } catch (error) {
       if (error?.name === "AbortError") {
         throw new Error("OVERPASS_TIMEOUT");
@@ -2697,36 +2736,166 @@ function uniqueSelectors(selectors) {
 }
 
 function deduplicateRawBusinessElements(elements) {
-  const seen = new Set();
+  const merged = [];
+  const keyToIndex = new Map();
 
-  return elements.filter(element => {
-    const tags = element.tags || {};
-    const name = normalizeLeadSearch(
-      tags.name || tags.brand || tags.operator || ""
-    );
-    const phone = normalizePhone(
-      tags.phone ||
-      tags["contact:phone"] ||
-      tags.mobile ||
-      ""
-    );
-    const lat = Number(element.lat ?? element.center?.lat);
-    const lon = Number(element.lon ?? element.center?.lon);
+  elements.forEach(element => {
+    if (!element) return;
 
-    const key = phone.length >= 7
-      ? `phone:${phone}`
-      : [
-          element.type || "place",
-          element.id || "",
-          name,
-          Number.isFinite(lat) ? lat.toFixed(5) : "",
-          Number.isFinite(lon) ? lon.toFixed(5) : ""
-        ].join("|");
+    const keys = createRawBusinessIdentityKeys(element);
+    const existingIndex = keys
+      .map(key => keyToIndex.get(key))
+      .find(index => Number.isInteger(index));
 
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+    if (Number.isInteger(existingIndex)) {
+      merged[existingIndex] = mergeRawBusinessElements(
+        merged[existingIndex],
+        element
+      );
+
+      createRawBusinessIdentityKeys(merged[existingIndex])
+        .forEach(key => keyToIndex.set(key, existingIndex));
+      return;
+    }
+
+    const index = merged.length;
+    const normalized = mergeRawBusinessElements(null, element);
+    merged.push(normalized);
+
+    createRawBusinessIdentityKeys(normalized)
+      .forEach(key => keyToIndex.set(key, index));
   });
+
+  return merged;
+}
+
+function createRawBusinessIdentityKeys(element) {
+  const tags = element.tags || {};
+  const name = normalizeLeadSearch(
+    tags.name || tags.brand || tags.operator || ""
+  );
+  const phone = normalizePhone(
+    tags.phone ||
+    tags["contact:phone"] ||
+    tags.mobile ||
+    ""
+  );
+  const websiteDomain = extractWebsiteDomain(
+    tags.website ||
+    tags["contact:website"] ||
+    tags.url ||
+    ""
+  );
+  const lat = Number(element.lat ?? element.center?.lat);
+  const lon = Number(element.lon ?? element.center?.lon);
+  const address = normalizeLeadSearch(
+    tags["addr:full"] ||
+    [
+      tags["addr:street"],
+      tags["addr:housenumber"],
+      tags["addr:postcode"],
+      tags["addr:city"]
+    ].filter(Boolean).join(" ")
+  );
+
+  const keys = [];
+
+  if (phone.length >= 7) keys.push(`phone:${phone}`);
+  if (websiteDomain) keys.push(`domain:${websiteDomain}`);
+  if (name && address) keys.push(`name-address:${name}|${address}`);
+
+  if (
+    name &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lon)
+  ) {
+    keys.push(
+      `name-position:${name}|${lat.toFixed(3)}|${lon.toFixed(3)}`
+    );
+  }
+
+  if (!keys.length) {
+    keys.push([
+      element.type || "place",
+      element.id || "",
+      Number.isFinite(lat) ? lat.toFixed(5) : "",
+      Number.isFinite(lon) ? lon.toFixed(5) : ""
+    ].join("|"));
+  }
+
+  return [...new Set(keys)];
+}
+
+function mergeRawBusinessElements(existing, incoming) {
+  if (!existing) {
+    return {
+      ...incoming,
+      tags: { ...(incoming.tags || {}) },
+      dataSources: uniqueSourceNames([
+        ...(incoming.dataSources || []),
+        incoming.source
+      ])
+    };
+  }
+
+  const existingTags = existing.tags || {};
+  const incomingTags = incoming.tags || {};
+  const mergedTags = { ...existingTags };
+
+  Object.entries(incomingTags).forEach(([key, value]) => {
+    if (
+      (mergedTags[key] === undefined ||
+       mergedTags[key] === null ||
+       mergedTags[key] === "") &&
+      value !== undefined &&
+      value !== null &&
+      value !== ""
+    ) {
+      mergedTags[key] = value;
+    }
+  });
+
+  return {
+    ...existing,
+    lat: existing.lat ?? incoming.lat,
+    lon: existing.lon ?? incoming.lon,
+    center: existing.center ?? incoming.center,
+    tags: mergedTags,
+    source: uniqueSourceNames([
+      ...(existing.dataSources || []),
+      existing.source,
+      ...(incoming.dataSources || []),
+      incoming.source
+    ]).join("+"),
+    dataSources: uniqueSourceNames([
+      ...(existing.dataSources || []),
+      existing.source,
+      ...(incoming.dataSources || []),
+      incoming.source
+    ])
+  };
+}
+
+function uniqueSourceNames(values) {
+  return [...new Set(
+    values
+      .flatMap(value => clean(value).split("+"))
+      .map(value => clean(value))
+      .filter(Boolean)
+  )];
+}
+
+function extractWebsiteDomain(value) {
+  const url = cleanUrl(value);
+  if (!url) return "";
+
+  try {
+    return new URL(url).hostname
+      .toLocaleLowerCase("pl")
+      .replace(/^www\./, "");
+  } catch {
+    return normalizeLeadSearch(url);
+  }
 }
 
 function createBusinessSearchCacheKey(
@@ -2736,6 +2905,7 @@ function createBusinessSearchCacheKey(
   categoryDefinition
 ) {
   return [
+    "tomtom-osm-v1",
     Number(lat).toFixed(3),
     Number(lon).toFixed(3),
     radius,
@@ -2962,6 +3132,113 @@ function formatSearchDuration(milliseconds) {
 
 
 
+async function fetchTomTomBusinesses({
+  query,
+  lat,
+  lon,
+  radius,
+  limit = 100
+}) {
+  if (!state.session || !state.tomtomAvailable) return [];
+
+  const invocation = supabaseClient.functions.invoke(
+    TOMTOM_FUNCTION_NAME,
+    {
+      body: {
+        query: clean(query),
+        lat: Number(lat),
+        lon: Number(lon),
+        radius: Number(radius),
+        limit: Math.min(100, Math.max(1, Number(limit) || 50))
+      }
+    }
+  );
+
+  const result = await Promise.race([
+    invocation,
+    new Promise(resolve => {
+      setTimeout(
+        () => resolve({ timedOut: true }),
+        TOMTOM_TIMEOUT_MS - 300
+      );
+    })
+  ]);
+
+  if (result?.timedOut) {
+    state.lastTomTomError = "TOMTOM_TIMEOUT";
+    console.warn("TomTom Edge Function timeout.");
+    return [];
+  }
+
+  const { data, error } = result;
+
+  if (error) {
+    const errorText = [
+      error.message,
+      error.context?.status,
+      error.context?.statusText
+    ].filter(Boolean).join(" ");
+
+    state.lastTomTomError = errorText || "TOMTOM_FUNCTION_ERROR";
+    console.warn("TomTom Edge Function:", error);
+
+    if (
+      /404|not found|function.*missing/i.test(errorText)
+    ) {
+      state.tomtomAvailable = false;
+    }
+
+    return [];
+  }
+
+  if (!data?.ok || !Array.isArray(data.results)) {
+    state.lastTomTomError = clean(data?.error || "TOMTOM_INVALID_RESPONSE");
+    console.warn("TomTom response:", data);
+    return [];
+  }
+
+  state.lastTomTomError = "";
+
+  return data.results
+    .map(resultItem => tomTomResultToRawElement(resultItem))
+    .filter(Boolean);
+}
+
+function tomTomResultToRawElement(item) {
+  const lat = Number(item.lat);
+  const lon = Number(item.lon);
+  const name = clean(item.name);
+
+  if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+
+  const categories = Array.isArray(item.categories)
+    ? item.categories.filter(Boolean).join(", ")
+    : "";
+
+  return {
+    type: "tomtom",
+    id: clean(item.id) || `tomtom-${lat}-${lon}-${name}`,
+    lat,
+    lon,
+    source: "tomtom",
+    dataSources: ["tomtom"],
+    tags: {
+      name,
+      phone: clean(item.phone),
+      website: clean(item.website),
+      "addr:full": clean(item.address),
+      "addr:postcode": clean(item.postalCode),
+      "addr:city": clean(item.city),
+      description: categories
+        ? `Kategorie TomTom: ${categories}`
+        : "",
+      "leadfinder:distance": Number(item.distance || 0)
+    }
+  };
+}
+
 async function fetchNominatimBusinesses(city, searchPhrase) {
   const phrase = clean(searchPhrase);
 
@@ -3014,6 +3291,8 @@ async function fetchNominatimBusinesses(city, searchPhrase) {
       return {
         type: "nominatim",
         id: row.place_id,
+        source: "nominatim",
+        dataSources: ["nominatim"],
         lat: Number(row.lat),
         lon: Number(row.lon),
         tags: {
@@ -3119,6 +3398,15 @@ function normalizeBusinesses(
         instagram
       });
       const id = `${element.type}-${element.id}`;
+      const dataSources = uniqueSourceNames([
+        ...(element.dataSources || []),
+        element.source ||
+          (element.type === "tomtom"
+            ? "tomtom"
+            : element.type === "nominatim"
+              ? "nominatim"
+              : "openstreetmap")
+      ]);
 
       const company = {
         id,
@@ -3143,6 +3431,8 @@ function normalizeBusinesses(
         openingHours,
         description: descriptionData.text,
         descriptionSource: descriptionData.source,
+        dataSources,
+        dataSource: dataSources.join("+") || "openstreetmap",
         hasWebsite: Boolean(website),
         status: "new",
         createdAt: new Date().toISOString()
@@ -3363,6 +3653,9 @@ function leadQuality(score) {
 }
 
 function buildAddress(tags) {
+  const fullAddress = clean(tags["addr:full"] || "");
+  if (fullAddress) return fullAddress;
+
   const street = [tags["addr:street"], tags["addr:housenumber"]]
     .filter(Boolean)
     .join(" ");
@@ -3513,6 +3806,9 @@ function renderSearchDiagnostics() {
       <tr>
         <td>${escapeHtml(formatDistance(item.radius))}</td>
         <td>${item.raw}</td>
+        <td>${item.tomtom ?? "—"}</td>
+        <td>${item.openstreetmap ?? "—"}</td>
+        <td>${item.nominatim ?? "—"}</td>
         <td>${item.accumulated}</td>
         <td>${item.ready}</td>
         <td>${item.verification}</td>
@@ -3536,6 +3832,9 @@ function renderSearchDiagnostics() {
           <tr>
             <th>Promień</th>
             <th>Pobrano</th>
+            <th>TomTom</th>
+            <th>OSM</th>
+            <th>Nominatim</th>
             <th>Łącznie</th>
             <th>Gotowe</th>
             <th>Weryfikacja</th>
@@ -3740,7 +4039,7 @@ function companyCard(company, source) {
     ? `<span class="verified-badge">✓ ZWERYFIKOWANY</span>`
     : "";
 
-  const sourceBadge = source === "saved"
+  const sourceBadge = source === "saved" || source === "results"
     ? `<span class="data-source-badge">${escapeHtml(leadSourceLabel(company))}</span>`
     : "";
 
@@ -4023,6 +4322,7 @@ function databaseRowToCompany(row) {
     contactCount: Number(row.contact_count || 0),
     manualEditedAt: row.manual_edited_at || "",
     dataSource: row.source || "openstreetmap",
+    dataSources: uniqueSourceNames([row.source || "openstreetmap"]),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -4291,20 +4591,40 @@ function statusLabel(status) {
 }
 
 function leadSourceLabel(company) {
-  const dataSource = company.dataSource || "openstreetmap";
+  const rawSource = clean(
+    company.dataSource ||
+    (Array.isArray(company.dataSources)
+      ? company.dataSources.join("+")
+      : "") ||
+    "openstreetmap"
+  ).toLocaleLowerCase("pl");
 
-  if (company.manualEditedAt && dataSource === "openstreetmap") {
-    return "OSM + UZUPEŁNIONE";
-  }
-
+  const sources = uniqueSourceNames([rawSource]);
   const labels = {
+    tomtom: "TOMTOM",
     openstreetmap: "OPENSTREETMAP",
+    nominatim: "NOMINATIM",
     manual: "DODANE RĘCZNIE",
     ceidg: "CEIDG",
     google: "GOOGLE"
   };
 
-  return labels[dataSource] || "DANE PUBLICZNE";
+  let label = sources
+    .map(source => labels[source] || source.toUpperCase())
+    .join(" + ");
+
+  if (!label) label = "DANE PUBLICZNE";
+
+  if (
+    company.manualEditedAt &&
+    sources.some(source =>
+      ["tomtom", "openstreetmap", "nominatim"].includes(source)
+    )
+  ) {
+    label += " + UZUPEŁNIONE";
+  }
+
+  return label;
 }
 
 function verificationSourceLabel(source) {

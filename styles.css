@@ -2490,3 +2490,14 @@ body.guest-mode {
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 6.5 — TOMTOM + OPENSTREETMAP
+   ========================================================= */
+
+.data-source-badge {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
