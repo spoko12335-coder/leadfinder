@@ -225,8 +225,27 @@ const paymentDialog = $("#paymentDialog");
 const adminDialog = $("#adminDialog");
 const editLeadDialog = $("#editLeadDialog");
 
+verifySearchModules();
 bindEvents();
 initApp();
+
+function verifySearchModules() {
+  const requiredFunctions = {
+    fetchBusinessesFast,
+    fetchOverpassHedged,
+    fetchNominatimBusinesses,
+    normalizeBusinesses
+  };
+
+  const missing = Object.entries(requiredFunctions)
+    .filter(([, value]) => typeof value !== "function")
+    .map(([name]) => name);
+
+  if (missing.length) {
+    console.error("Brakujące moduły wyszukiwania:", missing);
+    throw new Error("SEARCH_MODULE_ERROR");
+  }
+}
 
 function bindEvents() {
   searchForm.addEventListener("submit", handleSearch);
@@ -2688,6 +2707,118 @@ function formatSearchDuration(milliseconds) {
 }
 
 
+
+async function fetchNominatimBusinesses(city, searchPhrase) {
+  const phrase = clean(searchPhrase);
+
+  if (!phrase || !city) return [];
+
+  const params = new URLSearchParams({
+    q: `${phrase}, ${city}, Polska`,
+    format: "jsonv2",
+    limit: "12",
+    countrycodes: "pl",
+    addressdetails: "1",
+    extratags: "1",
+    namedetails: "1",
+    dedupe: "1",
+    "accept-language": "pl"
+  });
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
+      {
+        headers: {
+          Accept: "application/json"
+        },
+        signal: controller.signal
+      }
+    );
+
+    if (!response.ok) {
+      console.warn("Nominatim businesses HTTP:", response.status);
+      return [];
+    }
+
+    const rows = await response.json();
+
+    if (!Array.isArray(rows)) return [];
+
+    return rows.map(row => {
+      const extras = row.extratags || {};
+      const address = row.address || {};
+      const displayName = clean(
+        row.namedetails?.name ||
+        row.name ||
+        String(row.display_name || "").split(",")[0]
+      );
+
+      return {
+        type: "nominatim",
+        id: row.place_id,
+        lat: Number(row.lat),
+        lon: Number(row.lon),
+        tags: {
+          name: displayName,
+          phone:
+            extras.phone ||
+            extras["contact:phone"] ||
+            extras.mobile ||
+            "",
+          email:
+            extras.email ||
+            extras["contact:email"] ||
+            "",
+          website:
+            extras.website ||
+            extras["contact:website"] ||
+            extras.url ||
+            "",
+          facebook:
+            extras.facebook ||
+            extras["contact:facebook"] ||
+            "",
+          instagram:
+            extras.instagram ||
+            extras["contact:instagram"] ||
+            "",
+          opening_hours: extras.opening_hours || "",
+          description: extras.description || "",
+          service: extras.service || extras.services || "",
+          "addr:street":
+            address.road ||
+            address.pedestrian ||
+            address.residential ||
+            "",
+          "addr:housenumber": address.house_number || "",
+          "addr:postcode": address.postcode || "",
+          "addr:city":
+            address.city ||
+            address.town ||
+            address.village ||
+            address.municipality ||
+            city
+        }
+      };
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      console.warn("Nominatim businesses timeout.");
+      return [];
+    }
+
+    console.warn("Nominatim businesses error:", error);
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+
 function normalizeBusinesses(
   elements,
   categoryDefinition,
@@ -4043,8 +4174,17 @@ function friendlyError(error) {
   if (error.message === "OVERPASS_FAILED") {
     return "Nie udało się pobrać firm. Publiczny serwer OpenStreetMap może być przeciążony.";
   }
+  if (
+    error instanceof ReferenceError ||
+    error.message === "SEARCH_MODULE_ERROR"
+  ) {
+    return "Wystąpił błąd modułu wyszukiwania. Odśwież aplikację przez Ctrl + F5.";
+  }
+  if (error instanceof TypeError && /fetch/i.test(error.message || "")) {
+    return "Przeglądarka nie mogła połączyć się ze źródłem firm. Spróbuj ponownie za chwilę.";
+  }
 
-  return "Wystąpił błąd połączenia. Sprawdź internet i spróbuj ponownie.";
+  return "Wystąpił nieoczekiwany błąd aplikacji. Odśwież stronę przez Ctrl + F5 i spróbuj ponownie.";
 }
 
 function showToast(text) {
