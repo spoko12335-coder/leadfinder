@@ -313,6 +313,8 @@ function bindEvents() {
     showToast("Lista zamówień odświeżona.");
   });
   $("#refreshAdminOrdersBtn").addEventListener("click", loadAdminOrders);
+  $("#refreshAdminAnalyticsBtn").addEventListener("click", loadAdminAnalytics);
+  $("#adminAnalyticsRange").addEventListener("change", loadAdminAnalytics);
   $("#paymentSettingsForm").addEventListener("submit", savePaymentSettings);
   $("#copyPaymentBtn").addEventListener("click", copyPaymentDetails);
   $("#loginForm").addEventListener("submit", login);
@@ -771,9 +773,12 @@ async function openAdminDialog() {
     return;
   }
 
-  await loadPaymentSettings();
+  await Promise.all([
+    loadPaymentSettings(),
+    loadAdminOrders(),
+    loadAdminAnalytics()
+  ]);
   fillPaymentSettingsForm();
-  await loadAdminOrders();
   adminDialog.showModal();
 }
 
@@ -822,6 +827,192 @@ async function loadAdminOrders() {
 
   state.adminOrders = data || [];
   renderAdminOrders();
+}
+
+async function loadAdminAnalytics() {
+  if (!state.profile?.is_admin) return;
+
+  const rangeElement = $("#adminAnalyticsRange");
+  const days = Math.min(
+    365,
+    Math.max(1, Number(rangeElement?.value || 30))
+  );
+
+  const { data, error } = await supabaseClient.rpc(
+    "admin_search_dashboard",
+    { p_days: days }
+  );
+
+  if (error) {
+    console.error("Błąd statystyk administratora:", error);
+    $("#adminAnalyticsError")?.classList.remove("hidden");
+    return;
+  }
+
+  $("#adminAnalyticsError")?.classList.add("hidden");
+  state.adminAnalytics = data || null;
+  renderAdminAnalytics();
+}
+
+function renderAdminAnalytics() {
+  const data = state.adminAnalytics;
+  const summary = data?.summary || {};
+
+  const fields = {
+    adminStatUsers: summary.total_users,
+    adminStatNewUsers: summary.new_users,
+    adminStatSearches: summary.completed_searches,
+    adminStatFailed: summary.failed_searches,
+    adminStatAvgResults: formatDecimal(summary.avg_results),
+    adminStatAvgDuration: formatDurationMs(summary.avg_duration_ms),
+    adminStatPaidOrders: summary.paid_orders,
+    adminStatRevenue: formatPrice(summary.revenue_pln || 0)
+  };
+
+  Object.entries(fields).forEach(([id, value]) => {
+    const element = $(`#${id}`);
+    if (element) element.textContent = value ?? 0;
+  });
+
+  renderAdminRanking(
+    "#adminTopCities",
+    data?.top_cities || [],
+    item => item.city,
+    item => `${item.searches} wysz. · śr. ${formatDecimal(item.avg_results)} firm`
+  );
+
+  renderAdminRanking(
+    "#adminTopCategories",
+    data?.top_categories || [],
+    item => adminCategoryLabel(item.category),
+    item => `${item.searches} wysz. · śr. ${formatDecimal(item.avg_ready)} gotowych`
+  );
+
+  const sourceTotals = data?.source_totals || {};
+  const sourceContainer = $("#adminSourceStats");
+  if (sourceContainer) {
+    sourceContainer.innerHTML = [
+      ["TomTom", sourceTotals.tomtom],
+      ["OpenStreetMap", sourceTotals.openstreetmap],
+      ["Nominatim", sourceTotals.nominatim]
+    ].map(([name, count]) => `
+      <article>
+        <span>${escapeHtml(name)}</span>
+        <strong>${Number(count || 0)}</strong>
+      </article>
+    `).join("");
+  }
+
+  renderAdminRecentSearches(data?.recent_searches || []);
+}
+
+function renderAdminRanking(selector, items, titleGetter, metaGetter) {
+  const container = $(selector);
+  if (!container) return;
+
+  if (!items.length) {
+    container.innerHTML = `<p class="hint">Brak danych w wybranym okresie.</p>`;
+    return;
+  }
+
+  container.innerHTML = items.map((item, index) => `
+    <div class="admin-ranking-row">
+      <span class="admin-ranking-position">${index + 1}</span>
+      <div>
+        <strong>${escapeHtml(titleGetter(item) || "Brak danych")}</strong>
+        <small>${escapeHtml(metaGetter(item) || "")}</small>
+      </div>
+    </div>
+  `).join("");
+}
+
+function renderAdminRecentSearches(items) {
+  const tbody = $("#adminRecentSearches");
+  if (!tbody) return;
+
+  if (!items.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8">Brak wyszukiwań w wybranym okresie.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  tbody.innerHTML = items.map(item => {
+    const health = adminSearchHealth(item);
+
+    return `
+      <tr>
+        <td>${escapeHtml(formatShortDateTime(item.created_at))}</td>
+        <td>${escapeHtml(item.city || "—")}</td>
+        <td>${escapeHtml(adminCategoryLabel(item.category))}</td>
+        <td>${Number(item.result_count || 0)}</td>
+        <td>${Number(item.ready_count || 0)}</td>
+        <td>${escapeHtml(formatDurationMs(item.duration_ms))}</td>
+        <td>${escapeHtml(item.source || "—")}</td>
+        <td><span class="admin-health ${health.className}">${escapeHtml(health.label)}</span></td>
+      </tr>
+    `;
+  }).join("");
+}
+
+function adminSearchHealth(item) {
+  if (item.status === "failed" || item.error_code) {
+    return { className: "health-error", label: "Błąd" };
+  }
+
+  const total = Number(item.result_count || 0);
+  const ready = Number(item.ready_count || 0);
+  const duration = Number(item.duration_ms || 0);
+
+  if (total >= 8 && ready >= 4 && duration <= 15000) {
+    return { className: "health-good", label: "Dobre" };
+  }
+
+  if (total >= 5 && ready >= 2) {
+    return { className: "health-medium", label: "Średnie" };
+  }
+
+  return { className: "health-limited", label: "Słabe" };
+}
+
+function adminCategoryLabel(value) {
+  const category = clean(value);
+
+  if (category.startsWith("custom:")) {
+    return category.slice(7) || "Własna branża";
+  }
+
+  return categoryLabels[category] || category || "Brak kategorii";
+}
+
+function formatDecimal(value) {
+  const number = Number(value || 0);
+  return number.toFixed(1).replace(".", ",");
+}
+
+function formatDurationMs(value) {
+  const number = Number(value || 0);
+
+  if (!number) return "—";
+  if (number < 1000) return `${Math.round(number)} ms`;
+
+  return `${(number / 1000).toFixed(1).replace(".", ",")} s`;
+}
+
+function formatShortDateTime(value) {
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
 }
 
 function renderAdminOrders() {
@@ -993,6 +1184,76 @@ async function completeSearch(requestId, source, resultCount) {
   });
   if (error) console.error("Nie udało się zakończyć zapisu wyszukiwania:", error);
   await loadQuota();
+}
+
+async function finalizeSuccessfulSearch(
+  requestId,
+  source,
+  resultCount
+) {
+  const results = await Promise.allSettled([
+    completeSearch(requestId, source, resultCount),
+    recordSearchMetrics(requestId, "")
+  ]);
+
+  results.forEach(result => {
+    if (result.status === "rejected") {
+      console.error("Błąd finalizacji wyszukiwania:", result.reason);
+    }
+  });
+}
+
+async function recordSearchMetrics(requestId, errorCode = "") {
+  if (!state.session || !requestId) return;
+
+  const diagnostics = state.searchDiagnostics || {};
+  const sourceTotals = diagnostics.sourceTotals || {};
+  const lastSearch = state.lastSearch || {};
+  const durationMs = Math.max(
+    0,
+    Math.round(Number(state.lastSearchDurationMs || 0))
+  );
+
+  const payload = {
+    p_request_id: requestId,
+    p_purpose: lastSearch.purpose || getSearchPurpose(),
+    p_effective_radius: Number(
+      diagnostics.effectiveRadius ||
+      state.lastEffectiveRadius ||
+      lastSearch.effectiveRadius ||
+      lastSearch.radius ||
+      0
+    ) || null,
+    p_duration_ms: durationMs || null,
+    p_ready_count: Number(diagnostics.readyCount || 0),
+    p_verification_count: Number(
+      diagnostics.verificationCount || 0
+    ),
+    p_raw_count: Number(diagnostics.rawCount || 0),
+    p_tomtom_count: Number(sourceTotals.tomtom || 0),
+    p_osm_count: Number(sourceTotals.openstreetmap || 0),
+    p_nominatim_count: Number(sourceTotals.nominatim || 0),
+    p_cache_scope: state.lastSearchCacheScope || null,
+    p_error_code: clean(errorCode) || null
+  };
+
+  const { error } = await supabaseClient.rpc(
+    "record_my_search_metrics",
+    payload
+  );
+
+  if (error) {
+    console.warn("Nie udało się zapisać statystyk wyszukiwania:", error);
+  }
+}
+
+function normalizeSearchErrorCode(error) {
+  const message = clean(error?.message || "UNKNOWN_ERROR")
+    .toUpperCase()
+    .replace(/[^A-Z0-9_]+/g, "_")
+    .slice(0, 80);
+
+  return message || "UNKNOWN_ERROR";
 }
 
 async function failSearch(requestId) {
@@ -1167,6 +1428,7 @@ async function handleSearch(event) {
 
     if (usableLeadCount === 0) {
       await failSearch(requestId);
+      void recordSearchMetrics(requestId, "NO_RESULTS");
       reserved = false;
       resultsSection.classList.add("hidden");
       emptyState.classList.remove("hidden");
@@ -1183,18 +1445,20 @@ async function handleSearch(event) {
 
     reserved = false;
 
-    void completeSearch(
+    void finalizeSuccessfulSearch(
       requestId,
       state.lastSearchDataSource,
       usableLeadCount
-    ).catch(error => {
-      console.error("Nie udało się zakończyć wyszukiwania w tle:", error);
-    });
+    );
   } catch (error) {
     console.error(error);
 
     if (reserved && error.message !== "QUOTA_EXCEEDED") {
       await failSearch(requestId);
+      void recordSearchMetrics(
+        requestId,
+        normalizeSearchErrorCode(error)
+      );
     }
 
     if (error.message === "QUOTA_EXCEEDED") {
@@ -2558,6 +2822,16 @@ function createSearchDiagnostics({
   const withDirectContact = normalized.filter(hasDirectContact).length;
   const withoutRealName = normalized.filter(company => !company.hasRealName).length;
 
+  const sourceTotals = radiusDiagnostics.reduce(
+    (totals, item) => ({
+      tomtom: totals.tomtom + Number(item.tomtom || 0),
+      openstreetmap:
+        totals.openstreetmap + Number(item.openstreetmap || 0),
+      nominatim: totals.nominatim + Number(item.nominatim || 0)
+    }),
+    { tomtom: 0, openstreetmap: 0, nominatim: 0 }
+  );
+
   return {
     rawCount: rawElements.length,
     normalizedCount: normalized.length,
@@ -2572,6 +2846,7 @@ function createSearchDiagnostics({
     selectedRadius,
     effectiveRadius,
     autoExpanded: effectiveRadius > selectedRadius,
+    sourceTotals,
     radiusDiagnostics
   };
 }
@@ -4075,6 +4350,12 @@ function renderResults() {
   $("#resultsStats").textContent =
     `Pokazano: ${list.length}/${MAX_RESULTS_PER_SEARCH} • Gotowe: ${ready.length} • Do weryfikacji: ${verification.length} • Telefon: ${phoneCount} • Bez WWW: ${noWebsiteCount} • Czas: ${speedText}${radiusText}${cacheText}`;
 
+  renderSearchQuality({
+    total: list.length,
+    ready: ready.length,
+    durationMs: state.lastSearchDurationMs
+  });
+
   $("#resultReadyCount").textContent = ready.length;
   $("#resultVerificationCount").textContent = verification.length;
   $("#resultRadius").textContent = state.lastEffectiveRadius
@@ -4126,6 +4407,61 @@ function renderResults() {
   renderSearchDiagnostics();
 
   emptyState.classList.toggle("hidden", list.length !== 0);
+}
+
+function renderSearchQuality({
+  total,
+  ready,
+  durationMs
+}) {
+  const badge = $("#searchQualityBadge");
+  if (!badge) return;
+
+  const quality = assessSearchQuality({
+    total,
+    ready,
+    durationMs
+  });
+
+  badge.className = `search-quality-badge ${quality.className}`;
+  badge.innerHTML = `
+    <strong>${escapeHtml(quality.title)}</strong>
+    <span>${escapeHtml(quality.description)}</span>
+  `;
+  badge.classList.remove("hidden");
+}
+
+function assessSearchQuality({
+  total,
+  ready,
+  durationMs
+}) {
+  const duration = Number(durationMs || 0);
+
+  if (total >= 8 && ready >= 4 && duration <= 15000) {
+    return {
+      className: "quality-good",
+      title: "Dobra jakość wyników",
+      description:
+        "Znaleziono dużo firm i kilka gotowych kontaktów."
+    };
+  }
+
+  if (total >= 5 && ready >= 2) {
+    return {
+      className: "quality-medium",
+      title: "Średnia jakość wyników",
+      description:
+        "Lista jest użyteczna, ale część firm wymaga dodatkowej weryfikacji."
+    };
+  }
+
+  return {
+    className: "quality-limited",
+    title: "Ograniczona jakość wyników",
+    description:
+      "Dla tej branży lub lokalizacji publiczne bazy zawierają mało kompletnych danych."
+  };
 }
 
 function renderSearchDiagnostics() {

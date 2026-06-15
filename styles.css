@@ -2648,3 +2648,251 @@ main {
     min-height: 0;
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 6.9 — STABILIZACJA I STATYSTYKI
+   ========================================================= */
+
+.search-quality-badge {
+  display: grid;
+  gap: 3px;
+  margin: 10px 0;
+  padding: 11px 13px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+
+.search-quality-badge strong {
+  font-size: 11px;
+}
+
+.search-quality-badge span {
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.search-quality-badge.quality-good {
+  border-color: rgba(39,168,117,.20);
+  background: #ecf9f3;
+  color: #197a59;
+}
+
+.search-quality-badge.quality-medium {
+  border-color: rgba(230,161,57,.22);
+  background: #fff7e8;
+  color: #95621d;
+}
+
+.search-quality-badge.quality-limited {
+  border-color: rgba(230,95,119,.18);
+  background: #fff3f5;
+  color: #aa4c60;
+}
+
+.admin-analytics-section {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-analytics-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-analytics-controls select {
+  min-width: 105px;
+}
+
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.admin-stat-grid article {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid rgba(43,105,99,.12);
+  border-radius: 12px;
+  background: #f8fcfa;
+}
+
+.admin-stat-grid span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .4px;
+  text-transform: uppercase;
+}
+
+.admin-stat-grid strong {
+  color: #237d6e;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.admin-analytics-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.admin-analytics-card {
+  padding: 13px;
+  border: 1px solid rgba(43,105,99,.12);
+  border-radius: 13px;
+  background: rgba(255,255,255,.78);
+}
+
+.admin-analytics-card h4 {
+  margin: 0 0 10px;
+  color: #355b60;
+  font-size: 12px;
+}
+
+.admin-ranking {
+  display: grid;
+  gap: 7px;
+}
+
+.admin-ranking-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 8px;
+  border-radius: 9px;
+  background: #f6faf9;
+}
+
+.admin-ranking-position {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+  background: #e4f5ef;
+  color: #237d6e;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.admin-ranking-row > div {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-ranking-row strong {
+  color: #365a5f;
+  font-size: 10px;
+}
+
+.admin-ranking-row small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.admin-source-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.admin-source-grid article {
+  display: grid;
+  gap: 4px;
+  padding: 11px;
+  border-radius: 10px;
+  background: #f1f8f6;
+}
+
+.admin-source-grid span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.admin-source-grid strong {
+  color: #237d6e;
+  font-size: 18px;
+}
+
+.admin-search-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-search-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 9px;
+}
+
+.admin-search-table th,
+.admin-search-table td {
+  padding: 8px 7px;
+  border-bottom: 1px solid rgba(43,105,99,.10);
+  color: #566f73;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.admin-search-table th {
+  color: #365b60;
+  font-weight: 900;
+}
+
+.admin-health {
+  display: inline-flex;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .35px;
+  text-transform: uppercase;
+}
+
+.admin-health.health-good {
+  background: #dcf5ea;
+  color: #197a59;
+}
+
+.admin-health.health-medium {
+  background: #fff2d9;
+  color: #98621a;
+}
+
+.admin-health.health-limited {
+  background: #edf3f4;
+  color: #647b80;
+}
+
+.admin-health.health-error {
+  background: #fff0f3;
+  color: #bd5265;
+}
+
+@media (max-width: 760px) {
+  .admin-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-analytics-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 460px) {
+  .admin-analytics-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-source-grid {
+    grid-template-columns: 1fr;
+  }
+}

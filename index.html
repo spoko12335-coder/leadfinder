@@ -310,6 +310,7 @@
             </article>
           </div>
 
+          <div id="searchQualityBadge" class="search-quality-badge hidden"></div>
           <div id="resultsStats" class="stats-strip"></div>
           <div id="results"></div>
 
@@ -399,7 +400,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 6.8</p>
+          <p class="eyebrow">WERSJA 6.9</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -428,6 +429,8 @@
             <div><strong>✓</strong><span>Scalanie telefonu, strony i adresu z wielu baz</span></div>
             <div><strong>✓</strong><span>Odległość firmy od wybranej lokalizacji</span></div>
             <div><strong>✓</strong><span>Polskie kategorie i prawidłowe oznaczenia źródeł</span></div>
+            <div><strong>✓</strong><span>Pomiar jakości, czasu i źródeł każdego wyszukiwania</span></div>
+            <div><strong>✓</strong><span>Statystyki użytkowników, miast, branż i płatności</span></div>
             <div><strong>✓</strong><span>Opis firmy i godziny otwarcia, gdy dane są dostępne</span></div>
             <div><strong>✓</strong><span>Proste pakiety: 3 darmowe oraz 10, 30 i 100 wyszukiwań</span></div>
           </div>
@@ -590,10 +593,82 @@
     <div class="dialog-head">
       <div>
         <p class="eyebrow">PANEL ADMINISTRATORA</p>
-        <h2>Zamówienia i dane przelewu</h2>
+        <h2>Statystyki, zamówienia i konfiguracja</h2>
       </div>
       <button id="closeAdminDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
     </div>
+
+    <section class="admin-section admin-analytics-section">
+      <div class="orders-heading">
+        <div>
+          <p class="eyebrow">STATYSTYKI APLIKACJI</p>
+          <h3>Jakość wyszukiwania i użytkownicy</h3>
+        </div>
+        <div class="admin-analytics-controls">
+          <select id="adminAnalyticsRange" aria-label="Zakres statystyk">
+            <option value="7">7 dni</option>
+            <option value="30" selected>30 dni</option>
+            <option value="90">90 dni</option>
+          </select>
+          <button id="refreshAdminAnalyticsBtn" class="secondary small" type="button">Odśwież</button>
+        </div>
+      </div>
+
+      <p id="adminAnalyticsError" class="error hidden">
+        Nie udało się pobrać statystyk. Sprawdź, czy skrypt 6.9 został uruchomiony w Supabase.
+      </p>
+
+      <div class="admin-stat-grid">
+        <article><span>Wszystkie konta</span><strong id="adminStatUsers">0</strong></article>
+        <article><span>Nowe konta</span><strong id="adminStatNewUsers">0</strong></article>
+        <article><span>Wyszukiwania</span><strong id="adminStatSearches">0</strong></article>
+        <article><span>Nieudane</span><strong id="adminStatFailed">0</strong></article>
+        <article><span>Śr. liczba firm</span><strong id="adminStatAvgResults">0,0</strong></article>
+        <article><span>Śr. czas</span><strong id="adminStatAvgDuration">—</strong></article>
+        <article><span>Opłacone pakiety</span><strong id="adminStatPaidOrders">0</strong></article>
+        <article><span>Przychód</span><strong id="adminStatRevenue">0 zł</strong></article>
+      </div>
+
+      <div class="admin-analytics-columns">
+        <article class="admin-analytics-card">
+          <h4>Najpopularniejsze miasta</h4>
+          <div id="adminTopCities" class="admin-ranking"></div>
+        </article>
+
+        <article class="admin-analytics-card">
+          <h4>Najpopularniejsze branże</h4>
+          <div id="adminTopCategories" class="admin-ranking"></div>
+        </article>
+      </div>
+
+      <article class="admin-analytics-card">
+        <h4>Liczba pobranych rekordów według źródła</h4>
+        <div id="adminSourceStats" class="admin-source-grid"></div>
+      </article>
+
+      <article class="admin-analytics-card">
+        <h4>Ostatnie wyszukiwania</h4>
+        <div class="admin-search-table-wrap">
+          <table class="admin-search-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Miasto</th>
+                <th>Branża</th>
+                <th>Firmy</th>
+                <th>Gotowe</th>
+                <th>Czas</th>
+                <th>Źródło</th>
+                <th>Ocena</th>
+              </tr>
+            </thead>
+            <tbody id="adminRecentSearches">
+              <tr><td colspan="8">Ładowanie…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </section>
 
     <section class="admin-section">
       <h3>Dane do przelewu</h3>
