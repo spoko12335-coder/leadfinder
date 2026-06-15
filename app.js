@@ -39,6 +39,7 @@ const state = {
   searchCache: new Map(),
   lastSearchDurationMs: 0,
   lastSearchCacheHit: false,
+  lastSearchCacheScope: "",
   lastSearchDataSource: "",
   deferredPrompt: null
 };
@@ -1127,6 +1128,7 @@ async function handleSearch(event) {
 
     state.lastSearchDurationMs = performance.now() - searchStartedAt;
     state.lastSearchCacheHit = Boolean(searchResponse.cacheHit);
+    state.lastSearchCacheScope = searchResponse.cacheScope || "";
     state.lastSearchDataSource = searchResponse.source || "openstreetmap";
 
     $("#resultsTitle").textContent = purpose === "sales"
@@ -2159,11 +2161,30 @@ async function fetchBusinessesFast(
 
   const cached = getCachedBusinessElements(cacheKey);
   if (cached) {
-    setLoadingStage("Wczytuję szybkie wyniki…");
+    setLoadingStage("Wczytuję wyniki z pamięci urządzenia…");
     return {
       elements: cached.elements,
-      source: cached.source || "cache",
-      cacheHit: true
+      source: cached.source || "local-cache",
+      cacheHit: true,
+      cacheScope: "local"
+    };
+  }
+
+  setLoadingStage("Sprawdzam wspólną pamięć wyników…");
+  const sharedCached = await getSharedBusinessElements(cacheKey);
+
+  if (sharedCached) {
+    setCachedBusinessElements(
+      cacheKey,
+      sharedCached.elements,
+      sharedCached.source || "shared-cache"
+    );
+
+    return {
+      elements: sharedCached.elements,
+      source: sharedCached.source || "shared-cache",
+      cacheHit: true,
+      cacheScope: "shared"
     };
   }
 
@@ -2227,10 +2248,23 @@ async function fetchBusinessesFast(
 
   setCachedBusinessElements(cacheKey, combined, source);
 
+  void putSharedBusinessElements({
+    cacheKey,
+    lat,
+    lon,
+    radius,
+    categoryKey: categoryDefinition.key,
+    source,
+    elements: combined
+  }).catch(error => {
+    console.warn("Nie udało się zapisać wspólnego cache:", error);
+  });
+
   return {
     elements: combined,
     source,
-    cacheHit: false
+    cacheHit: false,
+    cacheScope: ""
   };
 }
 
@@ -2388,6 +2422,66 @@ function createBusinessSearchCacheKey(
   ].join("|");
 }
 
+async function getSharedBusinessElements(cacheKey) {
+  if (!state.session) return null;
+
+  try {
+    const { data, error } = await supabaseClient.rpc(
+      "get_shared_search_cache",
+      { p_cache_key: cacheKey }
+    );
+
+    if (error) {
+      console.warn("Odczyt wspólnego cache:", error);
+      return null;
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !Array.isArray(row.elements) || !row.elements.length) {
+      return null;
+    }
+
+    return {
+      elements: row.elements,
+      source: row.source || "shared-cache",
+      createdAt: row.created_at || null,
+      expiresAt: row.expires_at || null
+    };
+  } catch (error) {
+    console.warn("Wspólny cache jest chwilowo niedostępny:", error);
+    return null;
+  }
+}
+
+async function putSharedBusinessElements({
+  cacheKey,
+  lat,
+  lon,
+  radius,
+  categoryKey,
+  source,
+  elements
+}) {
+  if (!state.session || !Array.isArray(elements) || !elements.length) return;
+
+  const payload = elements.slice(0, 100);
+
+  const { error } = await supabaseClient.rpc(
+    "put_shared_search_cache",
+    {
+      p_cache_key: cacheKey,
+      p_latitude: Number(lat),
+      p_longitude: Number(lon),
+      p_radius: Number(radius),
+      p_category_key: clean(categoryKey) || "custom",
+      p_source: clean(source) || "openstreetmap",
+      p_elements: payload
+    }
+  );
+
+  if (error) throw error;
+}
+
 function getCachedBusinessElements(cacheKey) {
   const memoryItem = state.searchCache.get(cacheKey);
   if (
@@ -2450,6 +2544,12 @@ function withPromiseTimeout(promise, timeoutMs, errorCode) {
 
   return Promise.race([promise, timeout])
     .finally(() => clearTimeout(timer));
+}
+
+function cacheScopeLabel(scope) {
+  if (scope === "local") return "z pamięci urządzenia";
+  if (scope === "shared") return "ze wspólnej pamięci";
+  return "z pamięci";
 }
 
 function formatSearchDuration(milliseconds) {
@@ -2821,7 +2921,9 @@ function renderResults() {
   const emailCount = list.filter(item => item.email).length;
 
   const speedText = formatSearchDuration(state.lastSearchDurationMs);
-  const cacheText = state.lastSearchCacheHit ? " • z pamięci" : "";
+  const cacheText = state.lastSearchCacheHit
+    ? ` • ${cacheScopeLabel(state.lastSearchCacheScope)}`
+    : "";
 
   $("#resultsStats").textContent =
     `Pokazano: ${list.length} z maks. ${MAX_RESULTS_PER_SEARCH} wartościowych leadów • Telefon: ${phoneCount} • E-mail: ${emailCount} • Bez WWW: ${noWebsiteCount} • Czas: ${speedText}${cacheText}`;

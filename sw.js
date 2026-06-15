@@ -1,4 +1,4 @@
-const CACHE = "leadfinder-v6-0-fast-search";
+const CACHE = "leadfinder-v6-1-shared-cache";
 const ASSETS = [
   "./",
   "./index.html",
