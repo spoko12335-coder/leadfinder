@@ -2232,3 +2232,21 @@ body.guest-mode {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 6.0 — SZYBSZE WYSZUKIWANIE
+   ========================================================= */
+
+#searchBtn:disabled {
+  cursor: wait;
+}
+
+#searchBtn:disabled .btn-label {
+  animation: searchStagePulse 1.15s ease-in-out infinite;
+}
+
+@keyframes searchStagePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .72; }
+}

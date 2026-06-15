@@ -1,6 +1,9 @@
 const SUPABASE_URL = "https://dgvhhzfhhwrbhdxaolap.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_ibOSYMgLX6RHRv5wVQIsMg_-njehHH9";
 const MAX_RESULTS_PER_SEARCH = 10;
+const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const SEARCH_MAX_WAIT_MS = 11000;
+const OVERPASS_HEDGE_DELAY_MS = 2800;
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -33,6 +36,10 @@ const state = {
   citySuggestionCache: new Map(),
   recentCities: [],
   editingLeadId: null,
+  searchCache: new Map(),
+  lastSearchDurationMs: 0,
+  lastSearchCacheHit: false,
+  lastSearchDataSource: "",
   deferredPrompt: null
 };
 
@@ -1070,7 +1077,12 @@ async function handleSearch(event) {
 
   setLoading(true);
 
+  const searchStartedAt = performance.now();
+
   try {
+    setLoadingStage("Sprawdzam lokalizację…");
+    const location = await ensureSelectedSearchLocation(city);
+
     setLoadingStage("Sprawdzam limit…");
     await reserveSearch(
       requestId,
@@ -1080,14 +1092,14 @@ async function handleSearch(event) {
     );
     reserved = true;
 
-    const location = await ensureSelectedSearchLocation(city);
-    const elements = await fetchBusinesses(
+    const searchResponse = await fetchBusinessesFast(
       location.lat,
       location.lon,
       radius,
       categoryDefinition,
       city
     );
+    const elements = searchResponse.elements;
 
     const normalizedResults = normalizeBusinesses(
       elements,
@@ -1113,6 +1125,10 @@ async function handleSearch(event) {
       location
     };
 
+    state.lastSearchDurationMs = performance.now() - searchStartedAt;
+    state.lastSearchCacheHit = Boolean(searchResponse.cacheHit);
+    state.lastSearchDataSource = searchResponse.source || "openstreetmap";
+
     $("#resultsTitle").textContent = purpose === "sales"
       ? `Firmy do oferty: ${categoryDefinition.label} — ${city}`
       : `Firmy bez WWW: ${categoryDefinition.label} — ${city}`;
@@ -1136,7 +1152,15 @@ async function handleSearch(event) {
     emptyState.classList.add("hidden");
     renderResults();
 
-    await completeSearch(requestId, "openstreetmap", usableLeadCount);
+    reserved = false;
+
+    void completeSearch(
+      requestId,
+      state.lastSearchDataSource,
+      usableLeadCount
+    ).catch(error => {
+      console.error("Nie udało się zakończyć wyszukiwania w tle:", error);
+    });
   } catch (error) {
     console.error(error);
 
@@ -1978,7 +2002,7 @@ async function reverseGeocodePosition(lat, lon) {
   });
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(() => controller.abort(), 6000);
 
   try {
     const response = await fetch(
@@ -2119,189 +2143,324 @@ async function geocodeCity(city) {
   }
 }
 
-async function fetchBusinesses(lat, lon, radius, categoryDefinition, city) {
-  setLoadingStage("Pobieram firmy…");
-
-  const exactElements = await fetchOverpassSelectors(
-    lat,
-    lon,
-    radius,
-    categoryDefinition.exactSelectors,
-    "Pobieram firmy…"
-  );
-
-  let combined = [...exactElements];
-
-  if (combined.length < 20) {
-    const fallbackSelectors = categoryDefinition.fallbackSelectors || [];
-
-    if (fallbackSelectors.length) {
-      setLoadingStage("Poszerzam wyszukiwanie…");
-
-      try {
-        const fallbackElements = await fetchOverpassSelectors(
-          lat,
-          lon,
-          radius,
-          fallbackSelectors,
-          "Poszerzam wyszukiwanie…"
-        );
-        combined.push(...fallbackElements);
-      } catch (error) {
-        console.warn("Wyszukiwanie rozszerzone Overpass nie powiodło się:", error);
-      }
-    }
-  }
-
-  if (combined.length < 10) {
-    setLoadingStage("Sprawdzam dodatkowe wpisy OSM…");
-
-    try {
-      const nominatimElements = await fetchNominatimBusinesses(
-        city,
-        categoryDefinition.searchPhrase
-      );
-      combined.push(...nominatimElements);
-    } catch (error) {
-      console.warn("Wyszukiwanie tekstowe Nominatim nie powiodło się:", error);
-    }
-  }
-
-  return combined;
-}
-
-async function fetchOverpassSelectors(
+async function fetchBusinessesFast(
   lat,
   lon,
   radius,
-  selectors,
-  loadingText
+  categoryDefinition,
+  city
 ) {
+  const cacheKey = createBusinessSearchCacheKey(
+    lat,
+    lon,
+    radius,
+    categoryDefinition
+  );
+
+  const cached = getCachedBusinessElements(cacheKey);
+  if (cached) {
+    setLoadingStage("Wczytuję szybkie wyniki…");
+    return {
+      elements: cached.elements,
+      source: cached.source || "cache",
+      cacheHit: true
+    };
+  }
+
+  setLoadingStage("Szukam firm równolegle…");
+
+  const selectors = uniqueSelectors([
+    ...(categoryDefinition.exactSelectors || []),
+    ...(categoryDefinition.fallbackSelectors || [])
+  ]);
+
+  const overpassTask = withPromiseTimeout(
+    fetchOverpassHedged(lat, lon, radius, selectors),
+    SEARCH_MAX_WAIT_MS,
+    "OVERPASS_TIMEOUT"
+  );
+
+  const nominatimTask = withPromiseTimeout(
+    fetchNominatimBusinesses(city, categoryDefinition.searchPhrase),
+    6500,
+    "NOMINATIM_TIMEOUT"
+  );
+
+  const [overpassResult, nominatimResult] = await Promise.allSettled([
+    overpassTask,
+    nominatimTask
+  ]);
+
+  const overpassElements = overpassResult.status === "fulfilled"
+    ? overpassResult.value
+    : [];
+  const nominatimElements = nominatimResult.status === "fulfilled"
+    ? nominatimResult.value
+    : [];
+
+  const combined = deduplicateRawBusinessElements([
+    ...overpassElements,
+    ...nominatimElements
+  ]);
+
+  if (!combined.length) {
+    if (overpassResult.status === "rejected") {
+      console.warn("Overpass:", overpassResult.reason);
+    }
+    if (nominatimResult.status === "rejected") {
+      console.warn("Nominatim:", nominatimResult.reason);
+    }
+
+    throw new Error(
+      overpassResult.status === "rejected" &&
+      overpassResult.reason?.message === "RATE_LIMIT"
+        ? "RATE_LIMIT"
+        : "BUSINESS_SOURCES_FAILED"
+    );
+  }
+
+  const source = overpassElements.length && nominatimElements.length
+    ? "openstreetmap+nominatim"
+    : overpassElements.length
+      ? "openstreetmap"
+      : "nominatim";
+
+  setCachedBusinessElements(cacheKey, combined, source);
+
+  return {
+    elements: combined,
+    source,
+    cacheHit: false
+  };
+}
+
+async function fetchOverpassHedged(lat, lon, radius, selectors) {
   if (!selectors?.length) return [];
 
   const lines = selectors
-    .map(selector => `${selector}(around:${radius},${lat},${lon});`)
+    .map(selector =>
+      `${ensureNamedSelector(selector)}(around:${radius},${lat},${lon});`
+    )
     .join("\n");
 
-  const query = `[out:json][timeout:18];
+  const query = `[out:json][timeout:10];
 (
 ${lines}
 );
-out center 100;`;
+out center 80;`;
 
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.private.coffee/api/interpreter"
   ];
 
-  let lastError = new Error("OVERPASS_FAILED");
+  const controllers = [];
+  let backupTimer;
 
-  for (let index = 0; index < endpoints.length; index += 1) {
-    setLoadingStage(
-      index === 0 ? loadingText : "Próbuję serwera zapasowego…"
-    );
-
+  const requestEndpoint = async (endpoint, timeoutMs, stage) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
+    controllers.push(controller);
+    setLoadingStage(stage);
+
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(endpoints[index], {
+      const response = await fetch(endpoint, {
         method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+        },
         body: "data=" + encodeURIComponent(query),
         signal: controller.signal
       });
 
       if (response.status === 429) {
-        lastError = new Error("RATE_LIMIT");
-        continue;
+        throw new Error("RATE_LIMIT");
       }
 
       if (!response.ok) {
-        lastError = new Error("OVERPASS_FAILED");
-        continue;
+        throw new Error("OVERPASS_FAILED");
       }
 
       const data = await response.json();
       return data.elements || [];
     } catch (error) {
-      lastError = error?.name === "AbortError"
-        ? new Error("OVERPASS_TIMEOUT")
-        : new Error("OVERPASS_FAILED");
+      if (error?.name === "AbortError") {
+        throw new Error("OVERPASS_TIMEOUT");
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
     }
-  }
+  };
 
-  throw lastError;
-}
+  const primary = requestEndpoint(
+    endpoints[0],
+    9000,
+    "Szukam firm…"
+  );
 
-async function fetchNominatimBusinesses(city, searchPhrase) {
-  const phrase = clean(searchPhrase);
-  const params = new URLSearchParams({
-    q: `${phrase}, ${city}, Polska`,
-    format: "jsonv2",
-    limit: "20",
-    countrycodes: "pl",
-    addressdetails: "1",
-    extratags: "1",
-    namedetails: "1",
-    "accept-language": "pl"
+  const backup = new Promise((resolve, reject) => {
+    backupTimer = setTimeout(() => {
+      requestEndpoint(
+        endpoints[1],
+        7600,
+        "Pierwszy serwer odpowiada wolno — uruchamiam zapasowy…"
+      ).then(resolve, reject);
+    }, OVERPASS_HEDGE_DELAY_MS);
   });
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
-
   try {
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/search?${params.toString()}`,
-      {
-        headers: { Accept: "application/json" },
-        signal: controller.signal
-      }
-    );
-
-    if (!response.ok) return [];
-
-    const rows = await response.json();
-
-    return rows.map(row => {
-      const extras = row.extratags || {};
-      const address = row.address || {};
-      const displayName = clean(
-        row.namedetails?.name ||
-        row.name ||
-        String(row.display_name || "").split(",")[0]
-      );
-
-      return {
-        type: "nominatim",
-        id: row.place_id,
-        lat: Number(row.lat),
-        lon: Number(row.lon),
-        tags: {
-          name: displayName,
-          phone: extras.phone || extras["contact:phone"] || "",
-          email: extras.email || extras["contact:email"] || "",
-          website: extras.website || extras["contact:website"] || "",
-          facebook: extras.facebook || extras["contact:facebook"] || "",
-          instagram: extras.instagram || extras["contact:instagram"] || "",
-          opening_hours: extras.opening_hours || "",
-          description: extras.description || "",
-          service: extras.service || extras.services || "",
-          "addr:street": address.road || address.pedestrian || "",
-          "addr:housenumber": address.house_number || "",
-          "addr:postcode": address.postcode || "",
-          "addr:city": address.city || address.town || address.village || city
-        }
-      };
-    });
+    const elements = await Promise.any([primary, backup]);
+    return elements;
   } catch (error) {
-    if (error?.name === "AbortError") return [];
-    throw error;
+    const reasons = error?.errors || [];
+    const rateLimited = reasons.some(
+      reason => reason?.message === "RATE_LIMIT"
+    );
+    throw new Error(rateLimited ? "RATE_LIMIT" : "OVERPASS_FAILED");
   } finally {
-    clearTimeout(timer);
+    clearTimeout(backupTimer);
+    controllers.forEach(controller => {
+      if (!controller.signal.aborted) controller.abort();
+    });
   }
 }
+
+function ensureNamedSelector(selector) {
+  if (selector.includes('["name"]')) return selector;
+  return `${selector}["name"]`;
+}
+
+function uniqueSelectors(selectors) {
+  return [...new Set(
+    selectors
+      .map(selector => clean(selector))
+      .filter(Boolean)
+  )];
+}
+
+function deduplicateRawBusinessElements(elements) {
+  const seen = new Set();
+
+  return elements.filter(element => {
+    const tags = element.tags || {};
+    const name = normalizeLeadSearch(
+      tags.name || tags.brand || tags.operator || ""
+    );
+    const phone = normalizePhone(
+      tags.phone ||
+      tags["contact:phone"] ||
+      tags.mobile ||
+      ""
+    );
+    const lat = Number(element.lat ?? element.center?.lat);
+    const lon = Number(element.lon ?? element.center?.lon);
+
+    const key = phone.length >= 7
+      ? `phone:${phone}`
+      : [
+          element.type || "place",
+          element.id || "",
+          name,
+          Number.isFinite(lat) ? lat.toFixed(5) : "",
+          Number.isFinite(lon) ? lon.toFixed(5) : ""
+        ].join("|");
+
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function createBusinessSearchCacheKey(
+  lat,
+  lon,
+  radius,
+  categoryDefinition
+) {
+  return [
+    Number(lat).toFixed(3),
+    Number(lon).toFixed(3),
+    radius,
+    categoryDefinition.key,
+    normalizeLeadSearch(categoryDefinition.searchPhrase || "")
+  ].join("|");
+}
+
+function getCachedBusinessElements(cacheKey) {
+  const memoryItem = state.searchCache.get(cacheKey);
+  if (
+    memoryItem &&
+    Date.now() - memoryItem.createdAt < SEARCH_CACHE_TTL_MS
+  ) {
+    return memoryItem;
+  }
+
+  try {
+    const stored = JSON.parse(
+      sessionStorage.getItem(`leadfinder_search_${cacheKey}`) || "null"
+    );
+
+    if (
+      stored &&
+      Array.isArray(stored.elements) &&
+      Date.now() - stored.createdAt < SEARCH_CACHE_TTL_MS
+    ) {
+      state.searchCache.set(cacheKey, stored);
+      return stored;
+    }
+
+    sessionStorage.removeItem(`leadfinder_search_${cacheKey}`);
+  } catch {
+    // Brak dostępu do sessionStorage nie blokuje wyszukiwania.
+  }
+
+  return null;
+}
+
+function setCachedBusinessElements(cacheKey, elements, source) {
+  const item = {
+    createdAt: Date.now(),
+    source,
+    elements: elements.slice(0, 100)
+  };
+
+  state.searchCache.set(cacheKey, item);
+
+  try {
+    sessionStorage.setItem(
+      `leadfinder_search_${cacheKey}`,
+      JSON.stringify(item)
+    );
+  } catch {
+    // Duży wynik lub blokada pamięci nie powinny przerywać działania.
+  }
+}
+
+function withPromiseTimeout(promise, timeoutMs, errorCode) {
+  let timer;
+
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(errorCode)),
+      timeoutMs
+    );
+  });
+
+  return Promise.race([promise, timeout])
+    .finally(() => clearTimeout(timer));
+}
+
+function formatSearchDuration(milliseconds) {
+  const value = Number(milliseconds || 0);
+
+  if (!value) return "—";
+  if (value < 1000) return `${Math.round(value)} ms`;
+
+  return `${(value / 1000).toFixed(1).replace(".", ",")} s`;
+}
+
 
 function normalizeBusinesses(
   elements,
@@ -2661,8 +2820,11 @@ function renderResults() {
   const phoneCount = list.filter(item => item.phone).length;
   const emailCount = list.filter(item => item.email).length;
 
+  const speedText = formatSearchDuration(state.lastSearchDurationMs);
+  const cacheText = state.lastSearchCacheHit ? " • z pamięci" : "";
+
   $("#resultsStats").textContent =
-    `Pokazano: ${list.length} z maks. ${MAX_RESULTS_PER_SEARCH} wartościowych leadów • Telefon: ${phoneCount} • E-mail: ${emailCount} • Bez WWW: ${noWebsiteCount}`;
+    `Pokazano: ${list.length} z maks. ${MAX_RESULTS_PER_SEARCH} wartościowych leadów • Telefon: ${phoneCount} • E-mail: ${emailCount} • Bez WWW: ${noWebsiteCount} • Czas: ${speedText}${cacheText}`;
 
   resultsContainer.innerHTML = list
     .map(company => companyCard(company, "results"))
@@ -3646,6 +3808,9 @@ function friendlyError(error) {
   }
   if (error.message === "OVERPASS_TIMEOUT") {
     return "Serwery firm nie odpowiedziały w wyznaczonym czasie. Spróbuj ponownie albo wybierz mniejszy promień.";
+  }
+  if (error.message === "BUSINESS_SOURCES_FAILED") {
+    return "Źródła firm nie odpowiedziały wystarczająco szybko. Spróbuj ponownie — kolejne wyszukiwanie może użyć serwera zapasowego.";
   }
   if (error.message === "OVERPASS_FAILED") {
     return "Nie udało się pobrać firm. Publiczny serwer OpenStreetMap może być przeciążony.";
