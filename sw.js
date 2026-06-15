@@ -1,4 +1,4 @@
-const CACHE = "leadfinder-v7-2-2-payment-settings-fix";
+const CACHE = "leadfinder-v7-3-blik-phone";
 const ASSETS = [
   "./",
   "./index.html",

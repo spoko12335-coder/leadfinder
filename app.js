@@ -35,6 +35,7 @@ const state = {
   orders: [],
   paymentSettings: null,
   currentOrder: null,
+  selectedPaymentMethod: "bank_transfer",
   adminOrders: [],
   lastSearch: null,
   detectedLocation: null,
@@ -385,6 +386,8 @@ function bindEvents() {
     "#settingPaymentEmail",
     "#settingBankAccount",
     "#settingBankName",
+    "#settingBlikPhone",
+    "#settingBlikEnabled",
     "#settingInstructions",
     "#settingSalesEnabled"
   ].forEach(selector => {
@@ -397,6 +400,10 @@ function bindEvents() {
     );
   });
   $("#copyPaymentBtn").addEventListener("click", copyPaymentDetails);
+  $("#paymentMethodSelector").addEventListener(
+    "click",
+    handlePaymentMethodSelection
+  );
   $("#loginForm").addEventListener("submit", login);
   $("#registerForm").addEventListener("submit", register);
   $("#closeDialog").addEventListener("click", () => messageDialog.close());
@@ -1344,39 +1351,117 @@ function renderPaymentDialog() {
   const settings = state.paymentSettings || {};
   if (!order) return;
 
-  const account = formatBankAccount(settings.bank_account || "");
-  const hasAccount = Boolean(account);
-  $("#paymentDialogTitle").textContent = `${order.plan_name} — ${order.monthly_search_limit} wyszukiwań`;
+  const bankAvailable =
+    normalizeBankAccountInput(settings.bank_account || "").length === 26;
+  const blikAvailable =
+    Boolean(settings.blik_enabled) &&
+    normalizeBlikPhone(settings.blik_phone || "").length === 9;
 
-  $("#paymentInstructions").innerHTML = `
-    <div class="payment-row"><span>Kwota</span><strong>${formatPrice(order.amount_pln)}</strong></div>
-    <div class="payment-row"><span>Tytuł przelewu</span><strong>${escapeHtml(order.order_code)}</strong></div>
-    <div class="payment-row"><span>Sprzedawca</span><strong>${escapeHtml(settings.seller_name || "Do uzupełnienia przez administratora")}</strong></div>
-    <div class="payment-row"><span>Forma działalności</span><strong>${escapeHtml(settings.business_model_label || "działalność nierejestrowana")}</strong></div>
-    <div class="payment-row"><span>Adres do reklamacji</span><strong>${escapeHtml(settings.correspondence_address || "Nie skonfigurowano")}</strong></div>
-    <div class="payment-row"><span>Numer konta</span><strong>${hasAccount ? escapeHtml(account) : "Nie skonfigurowano"}</strong></div>
-    ${settings.bank_name ? `<div class="payment-row"><span>Bank</span><strong>${escapeHtml(settings.bank_name)}</strong></div>` : ""}
-    ${!hasAccount ? `<div class="payment-warning">Numer konta nie został jeszcze dodany. Skontaktuj się: <a href="mailto:${escapeAttr(settings.payment_email || "logo.wizytowka@gmail.com")}">${escapeHtml(settings.payment_email || "logo.wizytowka@gmail.com")}</a></div>` : ""}
-    ${settings.instructions ? `<div class="payment-note">${escapeHtml(settings.instructions)}</div>` : ""}
+  state.selectedPaymentMethod = blikAvailable
+    ? "blik_phone"
+    : "bank_transfer";
+
+  $("#paymentDialogTitle").textContent =
+    `${order.plan_name} — ${order.monthly_search_limit} wyszukiwań`;
+
+  $("#paymentMethodSelector").innerHTML = `
+    ${blikAvailable ? `<button class="payment-method-btn" data-payment-method="blik_phone" type="button"><strong>BLIK na telefon</strong><span>Najszybsza wpłata</span></button>` : ""}
+    ${bankAvailable ? `<button class="payment-method-btn" data-payment-method="bank_transfer" type="button"><strong>Przelew bankowy</strong><span>Numer rachunku</span></button>` : ""}
   `;
+
+  renderSelectedPaymentMethod();
+}
+
+function renderSelectedPaymentMethod() {
+  const order = state.currentOrder;
+  const settings = state.paymentSettings || {};
+  if (!order) return;
+
+  const method = state.selectedPaymentMethod;
+  const isBlik = method === "blik_phone";
+  const account = formatBankAccount(settings.bank_account || "");
+  const phone = formatBlikPhone(settings.blik_phone || "");
+
+  $$(".payment-method-btn").forEach(button => {
+    const active = button.dataset.paymentMethod === method;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+
+  $("#paymentDialogEyebrow").textContent = isBlik
+    ? "PRZELEW NA TELEFON BLIK"
+    : "PŁATNOŚĆ PRZELEWEM";
+  $("#copyPaymentBtn").textContent = isBlik
+    ? "Kopiuj dane BLIK"
+    : "Kopiuj dane do przelewu";
+
+  if (isBlik) {
+    $("#paymentInstructions").innerHTML = `
+      <div class="payment-highlight blik-highlight"><span>Wyślij przelew na telefon BLIK</span><strong>${escapeHtml(phone || "Numer nie został skonfigurowany")}</strong></div>
+      <div class="payment-row"><span>Kwota</span><strong>${formatPrice(order.amount_pln)}</strong></div>
+      <div class="payment-row"><span>Kod zamówienia</span><strong>${escapeHtml(order.order_code)}</strong></div>
+      <div class="payment-row"><span>Odbiorca</span><strong>${escapeHtml(settings.seller_name || "Kamil Mazur")}</strong></div>
+      <div class="payment-note">W aplikacji bankowej wybierz <strong>Przelew na telefon BLIK</strong>, wpisz numer telefonu i kwotę. W tytule lub wiadomości wpisz kod <strong>${escapeHtml(order.order_code)}</strong>, jeżeli Twój bank udostępnia takie pole.</div>
+      <div class="payment-security-warning">Nie wysyłaj nikomu 6-cyfrowego kodu BLIK. Ta płatność jest zwykłym przelewem na zarejestrowany numer telefonu.</div>
+    `;
+  } else {
+    $("#paymentInstructions").innerHTML = `
+      <div class="payment-row"><span>Kwota</span><strong>${formatPrice(order.amount_pln)}</strong></div>
+      <div class="payment-row"><span>Tytuł przelewu</span><strong>${escapeHtml(order.order_code)}</strong></div>
+      <div class="payment-row"><span>Sprzedawca</span><strong>${escapeHtml(settings.seller_name || "Do uzupełnienia przez administratora")}</strong></div>
+      <div class="payment-row"><span>Forma działalności</span><strong>${escapeHtml(settings.business_model_label || "działalność nierejestrowana")}</strong></div>
+      <div class="payment-row"><span>Adres do reklamacji</span><strong>${escapeHtml(settings.correspondence_address || "Nie skonfigurowano")}</strong></div>
+      <div class="payment-row"><span>Numer konta</span><strong>${account ? escapeHtml(account) : "Nie skonfigurowano"}</strong></div>
+      ${settings.bank_name ? `<div class="payment-row"><span>Bank</span><strong>${escapeHtml(settings.bank_name)}</strong></div>` : ""}
+      ${settings.instructions ? `<div class="payment-note">${escapeHtml(settings.instructions)}</div>` : ""}
+    `;
+  }
+  void saveSelectedPaymentMethod(method);
+}
+
+function handlePaymentMethodSelection(event) {
+  const button = event.target.closest("[data-payment-method]");
+  if (!button) return;
+  state.selectedPaymentMethod = button.dataset.paymentMethod;
+  renderSelectedPaymentMethod();
+}
+
+async function saveSelectedPaymentMethod(method) {
+  const order = state.currentOrder;
+  if (!order?.order_id) return;
+  const { error } = await supabaseClient.rpc("set_my_order_payment_method", {
+    p_order_id: order.order_id,
+    p_payment_method: method
+  });
+  if (error) console.warn("Nie udało się zapisać metody płatności:", error);
 }
 
 async function copyPaymentDetails() {
   const order = state.currentOrder;
   const settings = state.paymentSettings || {};
   if (!order) return;
-
-  const text = [
-    `Pakiet: ${order.plan_name} (${order.monthly_search_limit} wyszukiwań)`,
-    `Kwota: ${formatPrice(order.amount_pln)}`,
-    `Odbiorca: ${settings.seller_name || "nie skonfigurowano"}`,
-    `Numer konta: ${formatBankAccount(settings.bank_account || "") || "nie skonfigurowano"}`,
-    `Tytuł przelewu: ${order.order_code}`
-  ].join("\n");
-
+  const isBlik = state.selectedPaymentMethod === "blik_phone";
+  const text = isBlik
+    ? [
+        "Płatność: Przelew na telefon BLIK",
+        `Pakiet: ${order.plan_name} (${order.monthly_search_limit} wyszukiwań)`,
+        `Kwota: ${formatPrice(order.amount_pln)}`,
+        `Numer telefonu: ${formatBlikPhone(settings.blik_phone || "") || "nie skonfigurowano"}`,
+        `Odbiorca: ${settings.seller_name || "Kamil Mazur"}`,
+        `Kod zamówienia: ${order.order_code}`,
+        "Nie podawaj kodu BLIK. Wyślij przelew na numer telefonu."
+      ].join("\n")
+    : [
+        "Płatność: Przelew bankowy",
+        `Pakiet: ${order.plan_name} (${order.monthly_search_limit} wyszukiwań)`,
+        `Kwota: ${formatPrice(order.amount_pln)}`,
+        `Odbiorca: ${settings.seller_name || "nie skonfigurowano"}`,
+        `Numer konta: ${formatBankAccount(settings.bank_account || "") || "nie skonfigurowano"}`,
+        `Tytuł przelewu: ${order.order_code}`
+      ].join("\n");
   try {
     await navigator.clipboard.writeText(text);
-    showToast("Dane do przelewu skopiowane.");
+    showToast(isBlik ? "Dane do przelewu BLIK skopiowane." : "Dane do przelewu skopiowane.");
   } catch {
     showToast("Nie udało się skopiować danych.");
   }
@@ -1411,6 +1496,8 @@ function fillPaymentSettingsForm() {
     "logo.wizytowka@gmail.com";
   $("#settingBankAccount").value = settings.bank_account || "";
   $("#settingBankName").value = settings.bank_name || "";
+  $("#settingBlikPhone").value = formatBlikPhone(settings.blik_phone || "");
+  $("#settingBlikEnabled").checked = Boolean(settings.blik_enabled);
   $("#settingPaymentEmail").value =
     settings.payment_email || "logo.wizytowka@gmail.com";
   $("#settingInstructions").value = settings.instructions || "";
@@ -1436,6 +1523,8 @@ async function savePaymentSettings(event) {
   const bankAccount = normalizeBankAccountInput(
     $("#settingBankAccount").value
   );
+  const blikEnabled = $("#settingBlikEnabled").checked;
+  const blikPhone = normalizeBlikPhone($("#settingBlikPhone").value);
 
   clearBusinessSettingsMessage();
 
@@ -1480,16 +1569,28 @@ async function savePaymentSettings(event) {
     return;
   }
 
+  if (blikEnabled && blikPhone.length !== 9) {
+    showBusinessSettingsMessage(
+      "Numer telefonu BLIK musi zawierać dokładnie 9 cyfr.",
+      "error"
+    );
+    $("#settingBlikPhone").focus();
+    return;
+  }
+
+  const bankAvailable = bankAccount.length === 26;
+  const blikAvailable = blikEnabled && blikPhone.length === 9;
+
   if (
     salesEnabled &&
     (
       !correspondenceAddress ||
       !complaintsEmail ||
-      bankAccount.length !== 26
+      (!bankAvailable && !blikAvailable)
     )
   ) {
     showBusinessSettingsMessage(
-      "Aby włączyć sprzedaż, uzupełnij rzeczywisty adres, poprawny e-mail reklamacyjny i 26-cyfrowy numer konta.",
+      "Aby włączyć sprzedaż, uzupełnij adres, e-mail reklamacyjny oraz co najmniej jedną metodę płatności: rachunek bankowy lub BLIK na telefon.",
       "error"
     );
     return;
@@ -1514,6 +1615,8 @@ async function savePaymentSettings(event) {
         p_bank_account: bankAccount || null,
         p_bank_name:
           $("#settingBankName").value.trim() || null,
+        p_blik_phone: blikPhone || null,
+        p_blik_enabled: blikEnabled,
         p_payment_email: paymentEmail || null,
         p_instructions:
           $("#settingInstructions").value.trim() || null,
@@ -1568,6 +1671,18 @@ function normalizeBankAccountInput(value) {
   return String(value || "").replace(/\D+/g, "");
 }
 
+function normalizeBlikPhone(value) {
+  let digits = String(value || "").replace(/\D+/g, "");
+  if (digits.startsWith("48") && digits.length === 11) digits = digits.slice(2);
+  return digits.slice(0, 9);
+}
+
+function formatBlikPhone(value) {
+  const digits = normalizeBlikPhone(value);
+  if (!digits) return "";
+  return digits.replace(/^(\d{3})(\d{3})(\d{3})$/, "$1 $2 $3");
+}
+
 function isValidEmailAddress(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(
     String(value || "").trim()
@@ -1595,7 +1710,7 @@ function businessSettingsErrorMessage(error) {
       text
     )
   ) {
-    return "W Supabase brakuje aktualnej funkcji zapisu. Uruchom poprawiony skrypt SQL LeadFinder 7.2.2 i odśwież stronę.";
+    return "W Supabase brakuje aktualnej funkcji zapisu. Uruchom skrypt SQL LeadFinder 7.3 i odśwież stronę.";
   }
 
   if (/SALES_ENABLE_NOT_PERSISTED/i.test(text)) {
@@ -1644,12 +1759,16 @@ function updateBusinessSettingsReadiness() {
   const bankAccount = normalizeBankAccountInput(
     $("#settingBankAccount")?.value || ""
   );
+  const blikEnabled = Boolean($("#settingBlikEnabled")?.checked);
+  const blikPhone = normalizeBlikPhone($("#settingBlikPhone")?.value || "");
   const enabled = Boolean($("#settingSalesEnabled")?.checked);
+  const bankAvailable = bankAccount.length === 26;
+  const blikAvailable = blikEnabled && blikPhone.length === 9;
 
   const complete =
     Boolean(address) &&
     isValidEmailAddress(complaintsEmail) &&
-    bankAccount.length === 26;
+    (bankAvailable || blikAvailable);
 
   status.className =
     `business-readiness ${enabled && complete
@@ -1658,9 +1777,9 @@ function updateBusinessSettingsReadiness() {
 
   status.innerHTML = enabled && complete
     ? `<strong>Sprzedaż aktywna</strong>
-       <span>Dane sprzedawcy są kompletne. Klienci mogą tworzyć zamówienia.</span>`
+       <span>Dostępne metody: ${[bankAvailable ? "przelew bankowy" : "", blikAvailable ? "BLIK na telefon" : ""].filter(Boolean).join(" i ")}.</span>`
     : `<strong>Sprzedaż zablokowana</strong>
-       <span>Uzupełnij rzeczywisty adres do reklamacji, e-mail oraz numer konta, a następnie włącz sprzedaż.</span>`;
+       <span>Uzupełnij adres, e-mail oraz co najmniej jedną metodę płatności: rachunek bankowy lub BLIK na telefon.</span>`;
 }
 
 function updatePlanPurchaseAvailability() {
@@ -2166,6 +2285,7 @@ function renderAdminOrders() {
         <strong>${escapeHtml(order.order_code)}</strong>
         <span>${escapeHtml(order.user_email || "brak e-maila")}</span>
         <span>${escapeHtml(order.plan_name)} · ${order.monthly_search_limit} wyszukiwań · ${formatPrice(order.amount_pln)}</span>
+        <span class="admin-payment-method">Metoda: ${escapeHtml(paymentMethodLabel(order.payment_method))}</span>
         <small>${new Date(order.created_at).toLocaleString("pl-PL")}</small>
       </div>
       <div class="admin-order-actions">
@@ -2218,6 +2338,11 @@ async function rejectOrder(orderId) {
 
   showToast("Zamówienie odrzucone.");
   await loadAdminOrders();
+}
+
+function paymentMethodLabel(method) {
+  const labels = { blik_phone: "BLIK na telefon", bank_transfer: "Przelew bankowy" };
+  return labels[method] || "Nie wybrano";
 }
 
 function orderStatusLabel(status) {

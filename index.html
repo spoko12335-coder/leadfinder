@@ -408,7 +408,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 7.2.2</p>
+          <p class="eyebrow">WERSJA 7.3</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -786,21 +786,22 @@
       <p id="myOrdersEmpty" class="hint">Nie masz jeszcze zamówień.</p>
     </section>
 
-    <p class="hint">Pakiet działa przez 30 dni. Obecnie jest aktywowany po zaksięgowaniu płatności; automatyzację BLIK i przelewów podłączymy po odblokowaniu klucza operatora.</p>
+    <p class="hint">Pakiet działa przez 30 dni. Pakiet jest aktywowany ręcznie po zaksięgowaniu przelewu bankowego albo przelewu na telefon BLIK.</p>
   </dialog>
 
   <dialog id="paymentDialog">
     <div class="dialog-head">
       <div>
-        <p class="eyebrow">PŁATNOŚĆ PRZELEWEM</p>
+        <p id="paymentDialogEyebrow" class="eyebrow">WYBIERZ METODĘ PŁATNOŚCI</p>
         <h2 id="paymentDialogTitle">Zamówienie pakietu</h2>
       </div>
       <button id="closePaymentDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
     </div>
 
+    <div id="paymentMethodSelector" class="payment-method-selector"></div>
     <div id="paymentInstructions" class="payment-details"></div>
-    <button id="copyPaymentBtn" class="primary" type="button">Kopiuj dane do przelewu</button>
-    <p class="hint">Po wpłacie administrator sprawdzi przelew i aktywuje pakiet na 30 dni.</p>
+    <button id="copyPaymentBtn" class="primary" type="button">Kopiuj dane płatności</button>
+    <p class="hint">Po wpłacie administrator sprawdzi wpływ i ręcznie aktywuje pakiet na 30 dni. BLIK na telefon nie jest automatycznie potwierdzany przez aplikację.</p>
   </dialog>
 
   <dialog id="adminDialog" class="wide-dialog">
@@ -935,6 +936,16 @@
         <label>
           Nazwa banku
           <input id="settingBankName" type="text" placeholder="opcjonalnie" />
+        </label>
+
+        <label>
+          Numer telefonu BLIK
+          <input id="settingBlikPhone" type="tel" inputmode="numeric" autocomplete="tel" placeholder="9 cyfr" />
+        </label>
+
+        <label class="sales-enable-check">
+          <input id="settingBlikEnabled" type="checkbox" />
+          <span>Udostępnij klientom ręczny przelew na telefon BLIK.</span>
         </label>
 
         <label class="admin-form-wide">
