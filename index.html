@@ -305,8 +305,8 @@
       <section id="savedView" class="view" aria-labelledby="savedHeading">
         <div class="results-head">
           <div>
-            <p class="eyebrow">BAZA LEADÓW</p>
-            <h2 id="savedHeading">Zapisane firmy</h2>
+            <p class="eyebrow">MINI CRM</p>
+            <h2 id="savedHeading">Leady i kontakty</h2>
           </div>
           <button id="exportSavedBtn" class="secondary small" type="button">Eksport CSV</button>
         </div>
@@ -315,15 +315,49 @@
           Zaloguj się, aby przechowywać leady na swoim koncie.
         </div>
 
-        <div class="filters">
+        <div class="crm-summary-grid">
+          <article><strong id="crmTotal">0</strong><span>Wszystkie leady</span></article>
+          <article><strong id="crmVerified">0</strong><span>Zweryfikowane</span></article>
+          <article><strong id="crmFollowUps">0</strong><span>Kontakt na dziś</span></article>
+          <article><strong id="crmCustomers">0</strong><span>Klienci</span></article>
+        </div>
+
+        <div class="crm-filters">
+          <label class="crm-search-field">
+            Szukaj w leadach
+            <input id="savedSearch" type="search" placeholder="Nazwa, telefon, e-mail lub notatka" />
+          </label>
+
           <label>
             Status
             <select id="statusFilter">
               <option value="">Wszystkie</option>
               <option value="new">Nowy</option>
+              <option value="to_contact">Do kontaktu</option>
               <option value="contacted">Skontaktowano</option>
+              <option value="follow_up">Do ponownego kontaktu</option>
               <option value="interested">Zainteresowany</option>
+              <option value="customer">Klient</option>
               <option value="rejected">Odrzucony</option>
+            </select>
+          </label>
+
+          <label>
+            Weryfikacja
+            <select id="verifiedFilter">
+              <option value="">Wszystkie</option>
+              <option value="verified">Tylko zweryfikowane</option>
+              <option value="unverified">Niezweryfikowane</option>
+            </select>
+          </label>
+
+          <label>
+            Sortowanie
+            <select id="savedSort">
+              <option value="followup">Najbliższy kontakt</option>
+              <option value="newest">Najnowsze</option>
+              <option value="status">Według statusu</option>
+              <option value="name">Nazwa A–Z</option>
             </select>
           </label>
         </div>
@@ -339,7 +373,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 5.8</p>
+          <p class="eyebrow">WERSJA 5.9</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -350,12 +384,14 @@
             <div><strong>✓</strong><span>Licznik wykorzystanych i pozostałych wyszukiwań</span></div>
             <div><strong>✓</strong><span>Automatyczne odnowienie limitu na początku miesiąca</span></div>
             <div><strong>✓</strong><span>Leady zapisywane na koncie użytkownika</span></div>
+            <div><strong>✓</strong><span>Edycja danych, notatki i planowanie kolejnego kontaktu</span></div>
+            <div><strong>✓</strong><span>Weryfikacja firm oraz historia kontaktów</span></div>
             <div><strong>✓</strong><span>Dwa tryby: firmy bez WWW oraz dowolna sprzedaż B2B</span></div>
             <div><strong>✓</strong><span>Własna branża odbiorców i spersonalizowana oferta</span></div>
             <div><strong>✓</strong><span>Ręczne sprawdzanie firm w publicznej wyszukiwarce CEIDG/KRS</span></div>
             <div><strong>✓</strong><span>Maksymalnie 10 firm z publicznym kontaktem na jedno wyszukiwanie</span></div>
             <div><strong>✓</strong><span>Opis firmy i godziny otwarcia, gdy dane są dostępne</span></div>
-            <div><strong>✓</strong><span>Pakiety 25, 50, 100, 200, 500 i 1000 wyszukiwań</span></div>
+            <div><strong>✓</strong><span>Pakiety 3, 50, 100, 200, 500 i 1000 wyszukiwań</span></div>
           </div>
           <div class="notice">
             Wyższy pakiet można zamówić i opłacić zwykłym przelewem bankowym.
@@ -373,7 +409,7 @@
         <span class="nav-icon">⌕</span><span>Szukaj</span>
       </button>
       <button class="nav-btn" data-view="savedView" type="button">
-        <span class="nav-icon">★</span><span>Zapisane</span>
+        <span class="nav-icon">★</span><span>CRM</span>
       </button>
       <button class="nav-btn" data-view="aboutView" type="button">
         <span class="nav-icon">i</span><span>Informacje</span>
@@ -550,6 +586,111 @@
       <div id="adminOrders" class="admin-orders"></div>
       <p id="adminOrdersEmpty" class="hint">Brak oczekujących zamówień.</p>
     </section>
+  </dialog>
+
+
+  <dialog id="editLeadDialog" class="wide-dialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">EDYCJA LEADA</p>
+        <h2 id="editLeadTitle">Dane firmy</h2>
+      </div>
+      <button id="closeEditLeadDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <form id="editLeadForm" class="lead-edit-form">
+      <div class="grid-2">
+        <label>
+          Nazwa firmy
+          <input id="editName" type="text" maxlength="200" required />
+        </label>
+
+        <label>
+          Status
+          <select id="editStatus">
+            <option value="new">Nowy</option>
+            <option value="to_contact">Do kontaktu</option>
+            <option value="contacted">Skontaktowano</option>
+            <option value="follow_up">Do ponownego kontaktu</option>
+            <option value="interested">Zainteresowany</option>
+            <option value="customer">Klient</option>
+            <option value="rejected">Odrzucony</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="grid-2">
+        <label>
+          Telefon
+          <input id="editPhone" type="tel" maxlength="60" />
+        </label>
+
+        <label>
+          E-mail
+          <input id="editEmail" type="email" maxlength="200" />
+        </label>
+      </div>
+
+      <label>
+        Adres
+        <input id="editAddress" type="text" maxlength="300" />
+      </label>
+
+      <div class="grid-2">
+        <label>
+          Strona WWW
+          <input id="editWebsite" type="url" placeholder="https://..." />
+        </label>
+
+        <label>
+          Facebook
+          <input id="editFacebook" type="url" placeholder="https://facebook.com/..." />
+        </label>
+      </div>
+
+      <div class="grid-2">
+        <label>
+          Instagram
+          <input id="editInstagram" type="url" placeholder="https://instagram.com/..." />
+        </label>
+
+        <label>
+          Następny kontakt
+          <input id="editNextFollowUp" type="datetime-local" />
+        </label>
+      </div>
+
+      <div class="verification-editor">
+        <label class="check">
+          <input id="editVerified" type="checkbox" />
+          Firma została zweryfikowana
+        </label>
+
+        <label>
+          Źródło weryfikacji
+          <select id="editVerificationSource">
+            <option value="manual">Ręcznie</option>
+            <option value="ceidg">CEIDG/KRS</option>
+            <option value="google">Google</option>
+            <option value="facebook">Facebook</option>
+            <option value="phone">Rozmowa telefoniczna</option>
+            <option value="other">Inne źródło</option>
+          </select>
+        </label>
+      </div>
+
+      <label>
+        Notatki
+        <textarea
+          id="editNotes"
+          rows="6"
+          maxlength="3000"
+          placeholder="Np. rozmawiałem z właścicielem, wysłać ofertę w poniedziałek..."
+        ></textarea>
+      </label>
+
+      <button class="primary" type="submit">Zapisz zmiany</button>
+    </form>
   </dialog>
 
   <dialog id="messageDialog">

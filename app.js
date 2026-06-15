@@ -32,6 +32,7 @@ const state = {
   citySuggestionController: null,
   citySuggestionCache: new Map(),
   recentCities: [],
+  editingLeadId: null,
   deferredPrompt: null
 };
 
@@ -211,6 +212,7 @@ const authDialog = $("#authDialog");
 const plansDialog = $("#plansDialog");
 const paymentDialog = $("#paymentDialog");
 const adminDialog = $("#adminDialog");
+const editLeadDialog = $("#editLeadDialog");
 
 bindEvents();
 initApp();
@@ -228,11 +230,14 @@ function bindEvents() {
   $("#onlySocial").addEventListener("change", renderResults);
   $("#sortResults").addEventListener("change", renderResults);
   $("#statusFilter").addEventListener("change", renderSaved);
+  $("#verifiedFilter").addEventListener("change", renderSaved);
+  $("#savedSort").addEventListener("change", renderSaved);
+  $("#savedSearch").addEventListener("input", renderSaved);
   $("#exportResultsBtn").addEventListener("click", () =>
     exportCsv(getFilteredResults(), "wyniki-leadfinder.csv")
   );
   $("#exportSavedBtn").addEventListener("click", () =>
-    exportCsv(state.saved, "zapisane-leady.csv")
+    exportCsv(getFilteredSavedLeads(), "zapisane-leady.csv")
   );
 
   $("#authBtn").addEventListener("click", openAuthDialog);
@@ -249,6 +254,9 @@ function bindEvents() {
   $("#closePlansDialog").addEventListener("click", () => plansDialog.close());
   $("#closePaymentDialog").addEventListener("click", () => paymentDialog.close());
   $("#closeAdminDialog").addEventListener("click", () => adminDialog.close());
+  $("#closeEditLeadDialog").addEventListener("click", () => editLeadDialog.close());
+  $("#editLeadForm").addEventListener("submit", saveEditedLead);
+  $("#editVerified").addEventListener("change", updateVerificationFields);
   $("#openPlansBtn").addEventListener("click", openPlansDialog);
   $("#accountPlansBtn").addEventListener("click", () => {
     authDialog.close();
@@ -295,6 +303,9 @@ function bindEvents() {
     if (target.dataset.action === "save") await saveCompany(company);
     if (target.dataset.action === "remove") await removeCompany(company);
     if (target.dataset.action === "message") openMessage(company);
+    if (target.dataset.action === "edit") openLeadEditor(company);
+    if (target.dataset.action === "verify") await toggleLeadVerification(company);
+    if (target.dataset.action === "contacted") await markLeadContacted(company);
   });
 
   document.addEventListener("change", async event => {
@@ -2710,18 +2721,77 @@ async function loadSavedLeads() {
   renderResults();
 }
 
-function renderSaved() {
+function getFilteredSavedLeads() {
   const status = $("#statusFilter")?.value || "";
-  const list = status
-    ? state.saved.filter(item => item.status === status)
-    : state.saved;
+  const verification = $("#verifiedFilter")?.value || "";
+  const search = normalizeLeadSearch($("#savedSearch")?.value || "");
+  const sort = $("#savedSort")?.value || "followup";
 
-  const interested = state.saved.filter(
-    item => item.status === "interested"
-  ).length;
+  const list = state.saved.filter(company => {
+    if (status && company.status !== status) return false;
+    if (verification === "verified" && !company.isVerified) return false;
+    if (verification === "unverified" && company.isVerified) return false;
+
+    if (search) {
+      const haystack = normalizeLeadSearch([
+        company.name,
+        company.phone,
+        company.email,
+        company.address,
+        company.website,
+        company.facebook,
+        company.instagram,
+        company.notes,
+        company.categoryLabel,
+        company.targetIndustry
+      ].filter(Boolean).join(" "));
+
+      if (!haystack.includes(search)) return false;
+    }
+
+    return true;
+  });
+
+  return [...list].sort((a, b) => {
+    if (sort === "name") {
+      return a.name.localeCompare(b.name, "pl");
+    }
+
+    if (sort === "newest") {
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    }
+
+    if (sort === "status") {
+      return statusOrder(a.status) - statusOrder(b.status) ||
+        a.name.localeCompare(b.name, "pl");
+    }
+
+    const aFollowUp = a.nextFollowUpAt
+      ? new Date(a.nextFollowUpAt).getTime()
+      : Number.POSITIVE_INFINITY;
+    const bFollowUp = b.nextFollowUpAt
+      ? new Date(b.nextFollowUpAt).getTime()
+      : Number.POSITIVE_INFINITY;
+
+    return aFollowUp - bFollowUp ||
+      new Date(b.updatedAt || b.createdAt || 0) -
+      new Date(a.updatedAt || a.createdAt || 0);
+  });
+}
+
+function renderSaved() {
+  const list = getFilteredSavedLeads();
+  const verified = state.saved.filter(item => item.isVerified).length;
+  const customers = state.saved.filter(item => item.status === "customer").length;
+  const dueFollowUps = state.saved.filter(isFollowUpDue).length;
+
+  $("#crmTotal").textContent = state.saved.length;
+  $("#crmVerified").textContent = verified;
+  $("#crmFollowUps").textContent = dueFollowUps;
+  $("#crmCustomers").textContent = customers;
 
   $("#savedStats").textContent = state.session
-    ? `Zapisane: ${state.saved.length} • Zainteresowani: ${interested}`
+    ? `Pokazano: ${list.length} • Wszystkie: ${state.saved.length} • Zweryfikowane: ${verified}`
     : "Zaloguj się, aby zobaczyć zapisane leady.";
 
   savedContainer.innerHTML = list
@@ -2733,6 +2803,35 @@ function renderSaved() {
     !state.session || list.length !== 0
   );
 }
+
+function normalizeLeadSearch(value) {
+  return clean(value)
+    .toLocaleLowerCase("pl")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function statusOrder(status) {
+  const order = {
+    follow_up: 0,
+    to_contact: 1,
+    new: 2,
+    contacted: 3,
+    interested: 4,
+    customer: 5,
+    rejected: 6
+  };
+
+  return order[status] ?? 99;
+}
+
+function isFollowUpDue(company) {
+  if (!company.nextFollowUpAt) return false;
+  if (["customer", "rejected"].includes(company.status)) return false;
+  return new Date(company.nextFollowUpAt).getTime() <= Date.now();
+}
+
 
 function companyCard(company, source) {
   const isSaved = state.saved.some(item => item.id === company.id);
@@ -2759,6 +2858,16 @@ function companyCard(company, source) {
     ? `<span class="purpose-badge sales-purpose">OFERTA B2B</span>`
     : `<span class="purpose-badge website-purpose">BEZ WWW</span>`;
 
+  const verifiedBadge = source === "saved" && company.isVerified
+    ? `<span class="verified-badge">✓ ZWERYFIKOWANY</span>`
+    : "";
+
+  const sourceBadge = source === "saved"
+    ? `<span class="data-source-badge">${escapeHtml(leadSourceLabel(company))}</span>`
+    : "";
+
+  const followUpDue = source === "saved" && isFollowUpDue(company);
+
   const socials = [
     company.facebook
       ? `<a href="${escapeAttr(company.facebook)}" target="_blank" rel="noopener">Facebook</a>`
@@ -2775,6 +2884,8 @@ function companyCard(company, source) {
         <p class="address">${escapeHtml(company.address)}</p>
       </div>
       <div class="badge-stack">
+        ${verifiedBadge}
+        ${sourceBadge}
         ${purposeBadge}
         ${siteBadge}
         <span class="quality-badge ${quality.className}">
@@ -2804,10 +2915,34 @@ function companyCard(company, source) {
       ${company.openingHours ? `<div class="meta-row"><span class="key">Godziny:</span><span>${escapeHtml(company.openingHours)}</span></div>` : ""}
     </div>
 
-    <div class="verification-box">
-      <strong>Weryfikacja:</strong>
-      <span>sprawdź firmę w Google oraz w publicznej wyszukiwarce CEIDG/KRS przed wysłaniem oferty.</span>
-    </div>
+    ${source === "saved" ? `
+      <div class="crm-lead-details ${followUpDue ? "follow-up-due" : ""}">
+        <div>
+          <span>Status</span>
+          <strong>${escapeHtml(statusLabel(company.status))}</strong>
+        </div>
+        <div>
+          <span>Ostatni kontakt</span>
+          <strong>${company.lastContactedAt ? escapeHtml(formatDateTime(company.lastContactedAt)) : "brak"}</strong>
+        </div>
+        <div>
+          <span>Następny kontakt</span>
+          <strong>${company.nextFollowUpAt ? escapeHtml(formatDateTime(company.nextFollowUpAt)) : "nie ustawiono"}</strong>
+        </div>
+      </div>
+
+      ${company.notes ? `
+        <div class="lead-notes-preview">
+          <strong>Notatka</strong>
+          <p>${escapeHtml(truncateText(company.notes, 240))}</p>
+        </div>
+      ` : ""}
+    ` : `
+      <div class="verification-box">
+        <strong>Weryfikacja:</strong>
+        <span>sprawdź firmę w Google oraz w publicznej wyszukiwarce CEIDG/KRS przed wysłaniem oferty.</span>
+      </div>
+    `}
 
     <div class="card-actions card-actions-3">
       <a href="${mapUrl}" target="_blank" rel="noopener">Google Maps</a>
@@ -2816,17 +2951,19 @@ function companyCard(company, source) {
       <a class="ceidg-action" href="${ceidgUrl}" target="_blank" rel="noopener">Sprawdź CEIDG/KRS</a>
       <button data-action="message" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Utwórz wiadomość</button>
       ${source === "saved"
-        ? `<button class="danger" data-action="remove" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Usuń lead</button>`
+        ? `
+          <button class="edit-lead" data-action="edit" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Edytuj dane</button>
+          <button class="contacted-lead" data-action="contacted" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Zarejestruj kontakt</button>
+          <button class="verify-lead" data-action="verify" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">${company.isVerified ? "Cofnij weryfikację" : "Oznacz jako zweryfikowaną"}</button>
+          <button class="danger" data-action="remove" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">Usuń lead</button>
+        `
         : `<button class="save" data-action="save" data-id="${escapeAttr(company.id)}" data-source="${source}" type="button">${isSaved ? "✓ Zapisano" : "Zapisz lead"}</button>`}
       ${company.phone ? `<a href="tel:${escapeAttr(company.phone)}">Zadzwoń</a>` : ""}
     </div>
 
     ${source === "saved" ? `<label class="status-select">Status kontaktu
       <select data-status-id="${escapeAttr(company.id)}">
-        <option value="new" ${company.status === "new" ? "selected" : ""}>Nowy</option>
-        <option value="contacted" ${company.status === "contacted" ? "selected" : ""}>Skontaktowano</option>
-        <option value="interested" ${company.status === "interested" ? "selected" : ""}>Zainteresowany</option>
-        <option value="rejected" ${company.status === "rejected" ? "selected" : ""}>Odrzucony</option>
+        ${statusOptionsHtml(company.status)}
       </select>
     </label>` : ""}
   </article>`;
@@ -2838,8 +2975,10 @@ async function saveCompany(company) {
     return;
   }
 
-  if (state.saved.some(item => item.id === company.id)) {
-    showToast("Ta firma jest już zapisana.");
+  const duplicate = findDuplicateLead(company);
+
+  if (duplicate) {
+    showToast(`Ten lead lub ten sam kontakt jest już zapisany jako „${duplicate.name}”.`);
     return;
   }
 
@@ -2912,6 +3051,7 @@ async function updateStatus(id, status) {
   }
 
   company.status = status;
+  company.updatedAt = new Date().toISOString();
   renderSaved();
   showToast("Status został zaktualizowany.");
 }
@@ -2939,7 +3079,15 @@ function companyToDatabaseRow(company) {
     longitude: company.lon || null,
     source: "openstreetmap",
     lead_score: company.leadScore || 0,
-    contact_status: company.status || "new"
+    contact_status: company.status || "new",
+    is_verified: Boolean(company.isVerified),
+    verification_source: company.verificationSource || null,
+    verified_at: company.verifiedAt || null,
+    notes: company.notes || null,
+    last_contacted_at: company.lastContactedAt || null,
+    next_follow_up_at: company.nextFollowUpAt || null,
+    contact_count: Number(company.contactCount || 0),
+    manual_edited_at: company.manualEditedAt || null
   };
 }
 
@@ -2972,7 +3120,17 @@ function databaseRowToCompany(row) {
     hasWebsite: Boolean(row.website),
     leadScore: Number(row.lead_score || 0),
     status: row.contact_status || "new",
-    createdAt: row.created_at
+    isVerified: Boolean(row.is_verified),
+    verificationSource: row.verification_source || "",
+    verifiedAt: row.verified_at || "",
+    notes: row.notes || "",
+    lastContactedAt: row.last_contacted_at || "",
+    nextFollowUpAt: row.next_follow_up_at || "",
+    contactCount: Number(row.contact_count || 0),
+    manualEditedAt: row.manual_edited_at || "",
+    dataSource: row.source || "openstreetmap",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
   };
 
   company.leadQuality = leadQuality(company.leadScore);
@@ -2995,6 +3153,309 @@ function buildSavedBusinessDescription(row) {
 
   return `${capitalizeFirst(categoryLabel)}.${cityOrAddress}${contact}${website}`.trim();
 }
+
+function findDuplicateLead(company, excludedId = "") {
+  const phone = normalizePhone(company.phone);
+  const email = clean(company.email).toLocaleLowerCase("pl");
+  const identity = normalizeLeadIdentity(company);
+
+  return state.saved.find(item => {
+    if (item.id === excludedId) return false;
+    if (item.id === company.id) return true;
+
+    const itemPhone = normalizePhone(item.phone);
+    if (phone.length >= 7 && itemPhone === phone) return true;
+
+    const itemEmail = clean(item.email).toLocaleLowerCase("pl");
+    if (email && itemEmail === email) return true;
+
+    return identity && identity === normalizeLeadIdentity(item);
+  });
+}
+
+function normalizePhone(value) {
+  return clean(value).replace(/\D/g, "");
+}
+
+function normalizeLeadIdentity(company) {
+  const name = normalizeLeadSearch(company.name);
+  const address = normalizeLeadSearch(company.address);
+
+  if (!name) return "";
+  return `${name}|${address}`;
+}
+
+function openLeadEditor(company) {
+  state.editingLeadId = company.id;
+
+  $("#editLeadTitle").textContent = company.name;
+  $("#editName").value = company.name || "";
+  $("#editPhone").value = company.phone || "";
+  $("#editEmail").value = company.email || "";
+  $("#editWebsite").value = company.website || "";
+  $("#editFacebook").value = company.facebook || "";
+  $("#editInstagram").value = company.instagram || "";
+  $("#editAddress").value = company.address || "";
+  $("#editStatus").value = company.status || "new";
+  $("#editVerified").checked = Boolean(company.isVerified);
+  $("#editVerificationSource").value =
+    company.verificationSource || "manual";
+  $("#editNextFollowUp").value =
+    toDateTimeLocal(company.nextFollowUpAt);
+  $("#editNotes").value = company.notes || "";
+
+  updateVerificationFields();
+  editLeadDialog.showModal();
+}
+
+async function saveEditedLead(event) {
+  event.preventDefault();
+
+  const company = state.saved.find(item => item.id === state.editingLeadId);
+  if (!company || !company.dbId) {
+    showToast("Nie znaleziono zapisanego leada.");
+    return;
+  }
+
+  const edited = {
+    ...company,
+    name: clean($("#editName").value),
+    phone: clean($("#editPhone").value),
+    email: clean($("#editEmail").value),
+    website: cleanUrl($("#editWebsite").value),
+    facebook: cleanUrl($("#editFacebook").value),
+    instagram: cleanUrl($("#editInstagram").value),
+    address: clean($("#editAddress").value) || "Adres niepodany w danych"
+  };
+
+  const duplicate = findDuplicateLead(edited, company.id);
+  if (duplicate) {
+    showToast(`Podobny lead jest już zapisany jako „${duplicate.name}”.`);
+    return;
+  }
+
+  const isVerified = $("#editVerified").checked;
+  const verificationSource = isVerified
+    ? $("#editVerificationSource").value
+    : null;
+  const nextFollowUpAt = fromDateTimeLocal($("#editNextFollowUp").value);
+  const now = new Date().toISOString();
+
+  const updates = {
+    name: edited.name,
+    phone: edited.phone || null,
+    email: edited.email || null,
+    website: edited.website || null,
+    facebook: edited.facebook || null,
+    instagram: edited.instagram || null,
+    address: edited.address,
+    contact_status: $("#editStatus").value,
+    is_verified: isVerified,
+    verification_source: verificationSource,
+    verified_at: isVerified
+      ? (company.verifiedAt || now)
+      : null,
+    next_follow_up_at: nextFollowUpAt,
+    notes: clean($("#editNotes").value) || null,
+    manual_edited_at: now
+  };
+
+  const { data, error } = await supabaseClient
+    .from("saved_leads")
+    .update(updates)
+    .eq("id", company.dbId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Błąd edycji leada:", error);
+    showToast("Nie udało się zapisać zmian.");
+    return;
+  }
+
+  const updatedCompany = databaseRowToCompany(data);
+  state.saved = state.saved.map(item =>
+    item.id === company.id ? updatedCompany : item
+  );
+
+  state.editingLeadId = null;
+  editLeadDialog.close();
+  renderSaved();
+  showToast("Dane leada zostały zapisane.");
+}
+
+function updateVerificationFields() {
+  const checked = $("#editVerified").checked;
+  $("#editVerificationSource").disabled = !checked;
+}
+
+async function toggleLeadVerification(company) {
+  if (!company.dbId) return;
+
+  const verified = !company.isVerified;
+  const now = new Date().toISOString();
+
+  const updates = {
+    is_verified: verified,
+    verification_source: verified
+      ? (company.verificationSource || "manual")
+      : null,
+    verified_at: verified ? now : null
+  };
+
+  const { data, error } = await supabaseClient
+    .from("saved_leads")
+    .update(updates)
+    .eq("id", company.dbId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Błąd weryfikacji leada:", error);
+    showToast("Nie udało się zmienić weryfikacji.");
+    return;
+  }
+
+  const updatedCompany = databaseRowToCompany(data);
+  state.saved = state.saved.map(item =>
+    item.id === company.id ? updatedCompany : item
+  );
+
+  renderSaved();
+  showToast(verified
+    ? "Lead został oznaczony jako zweryfikowany."
+    : "Weryfikacja została cofnięta."
+  );
+}
+
+async function markLeadContacted(company) {
+  if (!company.dbId) return;
+
+  const now = new Date().toISOString();
+  const nextStatus = ["new", "to_contact"].includes(company.status)
+    ? "contacted"
+    : company.status;
+
+  const updates = {
+    last_contacted_at: now,
+    contact_count: Number(company.contactCount || 0) + 1,
+    contact_status: nextStatus
+  };
+
+  const { data, error } = await supabaseClient
+    .from("saved_leads")
+    .update(updates)
+    .eq("id", company.dbId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Błąd rejestrowania kontaktu:", error);
+    showToast("Nie udało się zarejestrować kontaktu.");
+    return;
+  }
+
+  const updatedCompany = databaseRowToCompany(data);
+  state.saved = state.saved.map(item =>
+    item.id === company.id ? updatedCompany : item
+  );
+
+  renderSaved();
+  showToast("Kontakt został zapisany.");
+}
+
+function statusOptionsHtml(selected) {
+  const statuses = [
+    ["new", "Nowy"],
+    ["to_contact", "Do kontaktu"],
+    ["contacted", "Skontaktowano"],
+    ["follow_up", "Do ponownego kontaktu"],
+    ["interested", "Zainteresowany"],
+    ["customer", "Klient"],
+    ["rejected", "Odrzucony"]
+  ];
+
+  return statuses
+    .map(([value, label]) =>
+      `<option value="${value}" ${selected === value ? "selected" : ""}>${label}</option>`
+    )
+    .join("");
+}
+
+function statusLabel(status) {
+  const labels = {
+    new: "Nowy",
+    to_contact: "Do kontaktu",
+    contacted: "Skontaktowano",
+    follow_up: "Do ponownego kontaktu",
+    interested: "Zainteresowany",
+    customer: "Klient",
+    rejected: "Odrzucony"
+  };
+
+  return labels[status] || "Nowy";
+}
+
+function leadSourceLabel(company) {
+  const dataSource = company.dataSource || "openstreetmap";
+
+  if (company.manualEditedAt && dataSource === "openstreetmap") {
+    return "OSM + UZUPEŁNIONE";
+  }
+
+  const labels = {
+    openstreetmap: "OPENSTREETMAP",
+    manual: "DODANE RĘCZNIE",
+    ceidg: "CEIDG",
+    google: "GOOGLE"
+  };
+
+  return labels[dataSource] || "DANE PUBLICZNE";
+}
+
+function verificationSourceLabel(source) {
+  if (!source) return "";
+
+  const labels = {
+    manual: "Ręcznie",
+    ceidg: "CEIDG/KRS",
+    google: "Google",
+    facebook: "Facebook",
+    phone: "Rozmowa telefoniczna",
+    other: "Inne źródło"
+  };
+
+  return labels[source] || "Ręcznie";
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function toDateTimeLocal(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocal(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 
 function findCompany(id, source) {
   const list = source === "saved" ? state.saved : state.results;
@@ -3097,7 +3558,9 @@ function exportCsv(list, filename) {
   const headers = [
     "Nazwa", "Branża", "Cel wyszukiwania", "Oferta", "Korzyść",
     "Adres", "Telefon", "E-mail", "Strona",
-    "Facebook", "Instagram", "Status", "Mapa"
+    "Facebook", "Instagram", "Status", "Zweryfikowany",
+    "Źródło weryfikacji", "Notatki", "Ostatni kontakt",
+    "Następny kontakt", "Liczba kontaktów", "Źródło danych", "Mapa"
   ];
 
   const rows = list.map(company => [
@@ -3112,7 +3575,16 @@ function exportCsv(list, filename) {
     company.website,
     company.facebook,
     company.instagram,
-    company.status || "",
+    statusLabel(company.status),
+    company.isVerified ? "Tak" : "Nie",
+    company.isVerified
+      ? verificationSourceLabel(company.verificationSource)
+      : "",
+    company.notes || "",
+    company.lastContactedAt ? formatDateTime(company.lastContactedAt) : "",
+    company.nextFollowUpAt ? formatDateTime(company.nextFollowUpAt) : "",
+    company.contactCount || 0,
+    leadSourceLabel(company),
     `https://www.google.com/maps/search/?api=1&query=${company.lat},${company.lon}`
   ]);
 

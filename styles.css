@@ -2049,3 +2049,186 @@ body.guest-mode {
     display: none;
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 5.9 — MINI CRM
+   ========================================================= */
+
+.crm-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 9px;
+  margin-bottom: 13px;
+}
+
+.crm-summary-grid article {
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+  border: 1px solid rgba(43,105,99,.12);
+  border-radius: 13px;
+  background: rgba(255,255,255,.82);
+  box-shadow: 0 6px 18px rgba(43,105,96,.055);
+}
+
+.crm-summary-grid strong {
+  color: var(--accent);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.crm-summary-grid span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .45px;
+}
+
+.crm-filters {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(140px, .8fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.verified-badge,
+.data-source-badge {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: 8px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: .55px;
+  white-space: nowrap;
+}
+
+.verified-badge {
+  background: #dcf5ea;
+  color: #197a59;
+}
+
+.data-source-badge {
+  background: #edf4fb;
+  color: #4f7185;
+}
+
+.crm-lead-details {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin: 12px 0;
+}
+
+.crm-lead-details > div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid rgba(43,105,99,.11);
+  border-radius: 10px;
+  background: #f8fcfa;
+}
+
+.crm-lead-details span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.crm-lead-details strong {
+  color: #365b60;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.crm-lead-details.follow-up-due {
+  border-radius: 12px;
+  box-shadow: inset 4px 0 0 #ff9277;
+}
+
+.crm-lead-details.follow-up-due > div:nth-child(3) {
+  background: #fff3ee;
+}
+
+.lead-notes-preview {
+  margin: 11px 0;
+  padding: 11px 12px;
+  border: 1px solid rgba(105,83,168,.12);
+  border-radius: 10px;
+  background: #f8f6ff;
+}
+
+.lead-notes-preview strong {
+  color: #6a55a0;
+  font-size: 10px;
+}
+
+.lead-notes-preview p {
+  margin: 5px 0 0;
+  color: #657078;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.card-actions .edit-lead {
+  background: #eef7ff;
+  color: #397b9b;
+}
+
+.card-actions .contacted-lead {
+  background: #e9f9f3;
+  color: #187a5f;
+}
+
+.card-actions .verify-lead {
+  background: #f5f1ff;
+  color: #6a55a0;
+}
+
+.lead-edit-form {
+  display: grid;
+  gap: 13px;
+}
+
+.verification-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 11px;
+  align-items: end;
+  padding: 13px;
+  border: 1px solid rgba(36,157,138,.14);
+  border-radius: 12px;
+  background: #f4fbf8;
+}
+
+.verification-editor .check {
+  min-height: 47px;
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .crm-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .crm-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .crm-search-field {
+    grid-column: 1 / -1;
+  }
+
+  .crm-lead-details {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .crm-filters,
+  .verification-editor {
+    grid-template-columns: 1fr;
+  }
+}
