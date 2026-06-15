@@ -2538,3 +2538,61 @@ body.guest-mode {
     display: none;
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 6.7 — CZYTELNIEJSZE WYNIKI
+   ========================================================= */
+
+.app-shell {
+  padding-bottom: 145px;
+}
+
+main {
+  padding-bottom: 28px;
+}
+
+.result-group:last-child {
+  padding-bottom: 36px;
+}
+
+.lead-distance {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: -5px 0 11px;
+  color: #278876;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.category-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.category-chips span {
+  padding: 5px 8px;
+  border: 1px solid rgba(43,105,99,.11);
+  border-radius: 999px;
+  background: #f0f8f5;
+  color: #54716d;
+  font-size: 8px;
+  font-weight: 800;
+}
+
+.ready-card {
+  border-color: rgba(36,157,138,.16);
+}
+
+.verification-card {
+  border-color: rgba(236,156,58,.18);
+}
+
+@media (min-width: 980px) {
+  .app-shell {
+    padding-bottom: 125px;
+  }
+}

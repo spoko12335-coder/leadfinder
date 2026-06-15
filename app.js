@@ -2383,7 +2383,15 @@ async function performAdaptiveBusinessSearch({
       purpose,
       offerName,
       offerBenefit
-    );
+    ).map(company => ({
+      ...company,
+      distanceMeters: calculateDistanceMeters(
+        location.lat,
+        location.lon,
+        Number(company.lat),
+        Number(company.lon)
+      )
+    }));
 
     classified = classifySearchLeads(normalized, purpose);
 
@@ -2495,6 +2503,7 @@ function classifySearchLeads(companies, purpose) {
 
   const sorter = (a, b) =>
     b.leadScore - a.leadScore ||
+    safeDistance(a.distanceMeters) - safeDistance(b.distanceMeters) ||
     Number(Boolean(b.address && b.address !== "Adres niepodany w danych")) -
       Number(Boolean(a.address && a.address !== "Adres niepodany w danych")) ||
     a.name.localeCompare(b.name, "pl");
@@ -2808,7 +2817,11 @@ out center ${MAX_OVERPASS_ELEMENTS};`;
       return (data.elements || []).map(element => ({
         ...element,
         source: "openstreetmap",
-        dataSources: ["openstreetmap"]
+        dataSources: ["openstreetmap"],
+        tags: {
+          ...(element.tags || {}),
+          "leadfinder:source": "openstreetmap"
+        }
       }));
     } catch (error) {
       if (error?.name === "AbortError") {
@@ -3374,9 +3387,8 @@ function tomTomResultToRawElement(item) {
       "addr:full": clean(item.address),
       "addr:postcode": clean(item.postalCode),
       "addr:city": clean(item.city),
-      description: categories
-        ? `Kategorie TomTom: ${categories}`
-        : "",
+      "leadfinder:categories": categories,
+      "leadfinder:source": "tomtom",
       "leadfinder:distance": Number(item.distance || 0)
     }
   };
@@ -3465,6 +3477,7 @@ async function fetchNominatimBusinesses(city, searchPhrase) {
           opening_hours: extras.opening_hours || "",
           description: extras.description || "",
           service: extras.service || extras.services || "",
+          "leadfinder:source": "nominatim",
           "addr:street":
             address.road ||
             address.pedestrian ||
@@ -3529,6 +3542,25 @@ function normalizeBusinesses(
       );
       const address = buildAddress(tags);
       const openingHours = clean(tags.opening_hours || "");
+      const id = `${element.type}-${element.id}`;
+      const dataSources = uniqueSourceNames([
+        ...(element.dataSources || []),
+        element.source ||
+          tags["leadfinder:source"] ||
+          (element.type === "tomtom"
+            ? "tomtom"
+            : element.type === "nominatim"
+              ? "nominatim"
+              : "openstreetmap")
+      ]);
+      const categories = translateBusinessCategories(
+        tags["leadfinder:categories"] ||
+        tags.shop ||
+        tags.amenity ||
+        tags.craft ||
+        tags.office ||
+        ""
+      );
       const descriptionData = buildBusinessDescription({
         tags,
         categoryLabel: categoryDefinition.label,
@@ -3538,18 +3570,10 @@ function normalizeBusinesses(
         email,
         website,
         facebook,
-        instagram
+        instagram,
+        dataSources,
+        categories
       });
-      const id = `${element.type}-${element.id}`;
-      const dataSources = uniqueSourceNames([
-        ...(element.dataSources || []),
-        element.source ||
-          (element.type === "tomtom"
-            ? "tomtom"
-            : element.type === "nominatim"
-              ? "nominatim"
-              : "openstreetmap")
-      ]);
 
       const company = {
         id,
@@ -3572,6 +3596,7 @@ function normalizeBusinesses(
         facebook,
         instagram,
         openingHours,
+        categories,
         description: descriptionData.text,
         descriptionSource: descriptionData.source,
         dataSources,
@@ -3626,7 +3651,9 @@ function buildBusinessDescription({
   email,
   website,
   facebook,
-  instagram
+  instagram,
+  dataSources = [],
+  categories = []
 }) {
   const directDescription = clean(
     tags["description:pl"] ||
@@ -3635,46 +3662,157 @@ function buildBusinessDescription({
     ""
   );
 
+  const sources = uniqueSourceNames(dataSources);
+  const source = sources.length > 1
+    ? "mixed"
+    : sources[0] || "generated";
+
   if (directDescription) {
     return {
       text: truncateText(directDescription, 420),
-      source: "openstreetmap"
+      source: source === "tomtom" ? "tomtom" : source
     };
   }
 
-  const resolvedCategoryLabel = categoryLabel || "firma usługowa";
+  const resolvedCategoryLabel =
+    clean(categoryLabel) || categories[0] || "firma usługowa";
+
+  const locationText =
+    address && address !== "Adres niepodany w danych"
+      ? ` pod adresem ${address}`
+      : city
+        ? ` w miejscowości ${city}`
+        : "";
+
   const sentences = [
-    `Firma została dopasowana do kategorii „${resolvedCategoryLabel}” w miejscowości ${city} na podstawie publicznych oznaczeń OpenStreetMap.`
+    `${capitalizeFirst(resolvedCategoryLabel)}${locationText}.`
   ];
+
+  if (categories.length) {
+    sentences.push(
+      `Kategorie działalności: ${joinPolishList(categories.slice(0, 4))}.`
+    );
+  }
 
   const serviceText = extractServiceDescription(tags);
   if (serviceText) {
-    sentences.push(`Zakres oznaczony w danych: ${serviceText}.`);
+    sentences.push(`Zakres usług: ${serviceText}.`);
   }
 
   const availableData = [];
-  if (address && address !== "Adres niepodany w danych") {
-    availableData.push("dokładny adres");
-  }
-  if (phone) availableData.push("numer telefonu");
-  if (email) availableData.push("adres e-mail");
-  if (facebook || instagram) availableData.push("profil społecznościowy");
+  if (phone) availableData.push("telefon");
+  if (email) availableData.push("e-mail");
+  if (facebook || instagram) availableData.push("media społecznościowe");
+  if (website) availableData.push("strona internetowa");
 
   if (availableData.length) {
-    sentences.push(`Dostępne dane kontaktowe: ${joinPolishList(availableData)}.`);
+    sentences.push(
+      `Dostępny kontakt: ${joinPolishList(availableData)}.`
+    );
+  } else {
+    sentences.push(
+      "W publicznych źródłach nie znaleziono bezpośredniego kontaktu."
+    );
   }
 
   if (!website) {
-    sentences.push("W publicznym wpisie nie podano własnej strony internetowej.");
+    sentences.push("Nie podano własnej strony internetowej.");
   }
-
-  sentences.push("Przed kontaktem należy potwierdzić aktualność danych.");
 
   return {
     text: sentences.join(" "),
-    source: "generated"
+    source
   };
 }
+
+function descriptionSourceLabel(company) {
+  const source = clean(company.descriptionSource).toLowerCase();
+
+  if (source === "mixed") {
+    return {
+      title: "Podsumowanie firmy",
+      detail: "na podstawie kilku źródeł"
+    };
+  }
+
+  if (source === "tomtom") {
+    return {
+      title: "Dane firmy",
+      detail: "z TomTom"
+    };
+  }
+
+  if (source === "openstreetmap") {
+    return {
+      title: "Opis firmy",
+      detail: "z OpenStreetMap"
+    };
+  }
+
+  if (source === "nominatim") {
+    return {
+      title: "Podsumowanie firmy",
+      detail: "z danych lokalizacyjnych"
+    };
+  }
+
+  return {
+    title: "Podsumowanie firmy",
+    detail: "na podstawie publicznych danych"
+  };
+}
+
+function translateBusinessCategories(value) {
+  const items = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[;,]/);
+
+  return [...new Set(
+    items
+      .map(item => translateBusinessCategory(item))
+      .filter(Boolean)
+  )].slice(0, 6);
+}
+
+function translateBusinessCategory(value) {
+  const normalized = clean(value)
+    .toLocaleLowerCase("en")
+    .replaceAll("_", " ")
+    .replace(/\s+/g, " ");
+
+  const translations = {
+    "hairdressers": "salon fryzjerski",
+    "hairdresser": "salon fryzjerski",
+    "barbers": "barber",
+    "barber": "barber",
+    "beauty salon": "salon kosmetyczny",
+    "beauty": "usługi kosmetyczne",
+    "nail salon": "salon paznokci",
+    "nails": "stylizacja paznokci",
+    "shop": "punkt usługowy lub handlowy",
+    "shopping": "handel",
+    "restaurant": "restauracja",
+    "cafe": "kawiarnia",
+    "coffee shop": "kawiarnia",
+    "auto repair": "warsztat samochodowy",
+    "car repair": "warsztat samochodowy",
+    "mechanic": "mechanik samochodowy",
+    "plumber": "hydraulik",
+    "electrician": "elektryk",
+    "hotel": "hotel",
+    "lodging": "noclegi",
+    "dentist": "dentysta",
+    "doctor": "gabinet lekarski",
+    "physiotherapist": "fizjoterapeuta",
+    "accountant": "biuro rachunkowe",
+    "lawyer": "kancelaria prawna",
+    "florist": "kwiaciarnia",
+    "photographer": "fotograf"
+  };
+
+  return translations[normalized] || normalized;
+}
+
 
 function extractServiceDescription(tags) {
   const rawValues = [
@@ -3708,7 +3846,13 @@ function translateOsmValue(value) {
     polish: "kuchnia polska",
     pizza: "pizza",
     burger: "burgery",
-    coffee_shop: "kawiarnia"
+    coffee_shop: "kawiarnia",
+    hairdresser: "salon fryzjerski",
+    barber: "barber",
+    beauty_salon: "salon kosmetyczny",
+    car_repair: "warsztat samochodowy",
+    plumber: "hydraulik",
+    electrician: "elektryk"
   };
 
   return translations[normalized] || normalized;
@@ -3763,6 +3907,46 @@ function contactChannelCount(company, purpose = company.leadPurpose || "website"
   }
 
   return channels.filter(Boolean).length;
+}
+
+function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+  if (
+    ![lat1, lon1, lat2, lon2].every(Number.isFinite)
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const earthRadius = 6371000;
+  const toRadians = degrees => degrees * Math.PI / 180;
+  const deltaLat = toRadians(lat2 - lat1);
+  const deltaLon = toRadians(lon2 - lon1);
+
+  const a =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(toRadians(lat1)) *
+    Math.cos(toRadians(lat2)) *
+    Math.sin(deltaLon / 2) ** 2;
+
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function safeDistance(value) {
+  const distance = Number(value);
+  return Number.isFinite(distance)
+    ? distance
+    : Number.POSITIVE_INFINITY;
+}
+
+function formatLeadDistance(value) {
+  const distance = Number(value);
+  if (!Number.isFinite(distance)) return "";
+
+  if (distance < 1000) {
+    return `${Math.max(50, Math.round(distance / 50) * 50)} m`;
+  }
+
+  return `${(distance / 1000).toFixed(distance < 10000 ? 1 : 0)
+    .replace(".", ",")} km`;
 }
 
 function calculateLeadScore(company, purpose = company.leadPurpose || "website") {
@@ -3852,8 +4036,23 @@ function getFilteredResults() {
   const sort = $("#sortResults").value;
 
   return [...filtered].sort((a, b) => {
-    if (sort === "name") return a.name.localeCompare(b.name, "pl");
-    return b.leadScore - a.leadScore || a.name.localeCompare(b.name, "pl");
+    if (sort === "name") {
+      return a.name.localeCompare(b.name, "pl");
+    }
+
+    if (sort === "distance") {
+      return (
+        safeDistance(a.distanceMeters) - safeDistance(b.distanceMeters) ||
+        b.leadScore - a.leadScore ||
+        a.name.localeCompare(b.name, "pl")
+      );
+    }
+
+    return (
+      b.leadScore - a.leadScore ||
+      safeDistance(a.distanceMeters) - safeDistance(b.distanceMeters) ||
+      a.name.localeCompare(b.name, "pl")
+    );
   });
 }
 
@@ -4176,7 +4375,7 @@ function companyCard(company, source) {
 
   const purposeBadge = company.leadPurpose === "sales"
     ? `<span class="purpose-badge sales-purpose">OFERTA B2B</span>`
-    : `<span class="purpose-badge website-purpose">BEZ WWW</span>`;
+    : "";
 
   const verifiedBadge = source === "saved" && company.isVerified
     ? `<span class="verified-badge">✓ ZWERYFIKOWANY</span>`
@@ -4194,6 +4393,12 @@ function companyCard(company, source) {
       : `<span class="tier-badge ready-tier">GOTOWY LEAD</span>`
     : "";
 
+  const descriptionLabel = descriptionSourceLabel(company);
+  const distanceText =
+    source === "results"
+      ? formatLeadDistance(company.distanceMeters)
+      : "";
+
   const socials = [
     company.facebook
       ? `<a href="${escapeAttr(company.facebook)}" target="_blank" rel="noopener">Facebook</a>`
@@ -4203,11 +4408,14 @@ function companyCard(company, source) {
       : ""
   ].filter(Boolean).join(" · ");
 
-  return `<article class="card">
+  return `<article class="card ${company.leadTier === "verification" ? "verification-card" : "ready-card"}">
     <div class="card-top">
       <div>
         <h3>${escapeHtml(company.name)}</h3>
         <p class="address">${escapeHtml(company.address)}</p>
+        ${distanceText
+          ? `<p class="lead-distance">⌖ ${escapeHtml(distanceText)} od wybranej lokalizacji</p>`
+          : ""}
       </div>
       <div class="badge-stack">
         ${verifiedBadge}
@@ -4223,10 +4431,17 @@ function companyCard(company, source) {
 
     <div class="company-description">
       <div class="description-heading">
-        <strong>${company.descriptionSource === "openstreetmap" ? "Opis firmy" : "Podsumowanie danych"}</strong>
-        <span>${company.descriptionSource === "openstreetmap" ? "z OpenStreetMap" : "na podstawie publicznego wpisu"}</span>
+        <strong>${escapeHtml(descriptionLabel.title)}</strong>
+        <span>${escapeHtml(descriptionLabel.detail)}</span>
       </div>
       <p>${escapeHtml(company.description || "Brak opisu w danych.")}</p>
+      ${Array.isArray(company.categories) && company.categories.length
+        ? `<div class="category-chips">
+            ${company.categories.slice(0, 4)
+              .map(category => `<span>${escapeHtml(category)}</span>`)
+              .join("")}
+          </div>`
+        : ""}
     </div>
 
     ${company.leadTier === "verification" && source === "results"
@@ -4745,7 +4960,7 @@ function leadSourceLabel(company) {
   const sources = uniqueSourceNames([rawSource]);
   const labels = {
     tomtom: "TOMTOM",
-    openstreetmap: "OPENSTREETMAP",
+    openstreetmap: "OSM",
     nominatim: "NOMINATIM",
     manual: "DODANE RĘCZNIE",
     ceidg: "CEIDG",

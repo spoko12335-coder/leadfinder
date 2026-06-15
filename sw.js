@@ -1,4 +1,4 @@
-const CACHE = "leadfinder-v6-6-location-selection-fix";
+const CACHE = "leadfinder-v6-7-readable-results";
 const ASSETS = [
   "./",
   "./index.html",
