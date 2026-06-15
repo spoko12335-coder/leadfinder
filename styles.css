@@ -2270,3 +2270,223 @@ body.guest-mode {
     transform: translateY(0);
   }
 }
+
+
+/* =========================================================
+   LEADFINDER 6.4 — LEPSZE WYNIKI I DWA POZIOMY LEADÓW
+   ========================================================= */
+
+.ready-filter {
+  border-color: rgba(36,157,138,.22) !important;
+  background: #ecfaf5 !important;
+  color: #18785f !important;
+}
+
+.verification-filter {
+  border-color: rgba(236,156,58,.22) !important;
+  background: #fff8ec !important;
+  color: #9a641e !important;
+}
+
+.result-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 9px;
+  margin: 12px 0;
+}
+
+.result-kpi-grid article {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid rgba(43,105,99,.12);
+  border-radius: 13px;
+  background: rgba(255,255,255,.83);
+  box-shadow: 0 6px 18px rgba(43,105,96,.055);
+}
+
+.result-kpi-grid span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: .45px;
+  text-transform: uppercase;
+}
+
+.result-kpi-grid strong {
+  color: #287d70;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.result-group {
+  margin-top: 18px;
+}
+
+.result-group + .result-group {
+  margin-top: 27px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(43,105,99,.13);
+}
+
+.result-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 3px 10px;
+}
+
+.result-group-head h3 {
+  margin: 3px 0 0;
+  color: #284e54;
+  font-size: 18px;
+}
+
+.result-group-head > strong {
+  display: grid;
+  place-items: center;
+  min-width: 35px;
+  height: 35px;
+  border-radius: 11px;
+  background: #e8f7f2;
+  color: #21836f;
+}
+
+.verification-group .result-group-head > strong {
+  background: #fff2dc;
+  color: #a96818;
+}
+
+.result-group-kicker {
+  color: #21836f;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .75px;
+}
+
+.verification-group .result-group-kicker {
+  color: #a96818;
+}
+
+.result-group-description {
+  margin: -2px 3px 11px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tier-badge {
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: .55px;
+  white-space: nowrap;
+}
+
+.ready-tier {
+  background: #dcf5ea;
+  color: #197a59;
+}
+
+.verification-tier {
+  background: #fff0d7;
+  color: #9a5f13;
+}
+
+.verification-contact-summary {
+  border-color: rgba(236,156,58,.22);
+  background: linear-gradient(135deg, #fff6e7, #fffaf2);
+}
+
+.verification-contact-summary strong,
+.verification-contact-summary span {
+  color: #98611c;
+}
+
+.verification-required {
+  border-color: rgba(236,156,58,.24) !important;
+  background: #fff8ed !important;
+  color: #81531c !important;
+}
+
+.search-diagnostics {
+  margin-top: 16px;
+  border: 1px solid rgba(43,105,99,.15);
+  border-radius: 13px;
+  background: rgba(255,255,255,.76);
+}
+
+.search-diagnostics summary {
+  padding: 12px 14px;
+  color: #45666b;
+  font-size: 11px;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+#searchDiagnosticsContent {
+  padding: 0 14px 14px;
+}
+
+.diagnostic-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+
+.diagnostic-summary span {
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #eef7f4;
+  color: #53716e;
+  font-size: 9px;
+}
+
+.diagnostic-table-wrap {
+  overflow-x: auto;
+}
+
+.diagnostic-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9px;
+}
+
+.diagnostic-table th,
+.diagnostic-table td {
+  padding: 8px;
+  border-bottom: 1px solid rgba(43,105,99,.10);
+  color: #5d7376;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.diagnostic-table th {
+  color: #365d61;
+  font-weight: 900;
+}
+
+@media (min-width: 980px) {
+  .app-shell {
+    width: min(100%, 1180px);
+  }
+
+  .result-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  #searchView > .panel {
+    max-width: 820px;
+    margin-inline: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .result-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

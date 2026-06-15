@@ -256,9 +256,9 @@
           </form>
 
           <p class="hint">
-            Jedno wyszukiwanie zwraca maksymalnie 10 firm z rzeczywistym publicznym kontaktem.
-            Naprawiono brakujący moduł wyszukiwania firm. Wspólna pamięć pozostaje opcjonalna i nie blokuje publicznych źródeł.
-            Wyszukiwanie bez wartościowego leada nie zmniejsza limitu.
+            Jedno kliknięcie zwraca maksymalnie 10 firm. Najpierw wybieramy firmy z publicznym kontaktem,
+            a brakujące miejsca uzupełniamy firmami do weryfikacji. Gdy wyników jest mało,
+            promień jest automatycznie rozszerzany bez naliczania kolejnego wyszukiwania.
           </p>
         </div>
 
@@ -274,7 +274,8 @@
           <div class="filters">
             <label class="check"><input id="onlyNoWebsite" type="checkbox" checked /> Bez strony WWW</label>
             <label class="check"><input id="hideUnnamed" type="checkbox" checked /> Tylko z nazwą</label>
-            <label class="check required-contact"><input id="onlyContact" type="checkbox" checked disabled /> Tylko z publicznym kontaktem</label>
+            <label class="check ready-filter"><input id="onlyContact" type="checkbox" /> Tylko gotowe leady</label>
+            <label class="check verification-filter"><input id="onlyVerification" type="checkbox" /> Tylko do weryfikacji</label>
             <label class="check"><input id="onlyPhone" type="checkbox" /> Z telefonem</label>
             <label class="check"><input id="onlySocial" type="checkbox" /> Z social media</label>
           </div>
@@ -289,8 +290,32 @@
             </label>
           </div>
 
+          <div class="result-kpi-grid">
+            <article>
+              <span>Gotowe leady</span>
+              <strong id="resultReadyCount">0</strong>
+            </article>
+            <article>
+              <span>Do weryfikacji</span>
+              <strong id="resultVerificationCount">0</strong>
+            </article>
+            <article>
+              <span>Sprawdzony obszar</span>
+              <strong id="resultRadius">—</strong>
+            </article>
+            <article>
+              <span>Pobrane obiekty</span>
+              <strong id="resultRawCount">—</strong>
+            </article>
+          </div>
+
           <div id="resultsStats" class="stats-strip"></div>
-          <div id="results" class="cards"></div>
+          <div id="results"></div>
+
+          <details id="searchDiagnostics" class="search-diagnostics hidden">
+            <summary>Diagnostyka wyszukiwania — panel administratora</summary>
+            <div id="searchDiagnosticsContent"></div>
+          </details>
         </div>
 
         <div id="emptyState" class="empty hidden">
@@ -373,7 +398,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 6.3</p>
+          <p class="eyebrow">WERSJA 6.4</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -394,7 +419,10 @@
             <div><strong>✓</strong><span>Dwa tryby: firmy bez WWW oraz dowolna sprzedaż B2B</span></div>
             <div><strong>✓</strong><span>Własna branża odbiorców i spersonalizowana oferta</span></div>
             <div><strong>✓</strong><span>Ręczne sprawdzanie firm w publicznej wyszukiwarce CEIDG/KRS</span></div>
-            <div><strong>✓</strong><span>Maksymalnie 10 firm z publicznym kontaktem na jedno wyszukiwanie</span></div>
+            <div><strong>✓</strong><span>Maksymalnie 10 firm na jedno wyszukiwanie</span></div>
+            <div><strong>✓</strong><span>Dwa poziomy: gotowe leady oraz firmy do weryfikacji</span></div>
+            <div><strong>✓</strong><span>Automatyczne rozszerzanie promienia bez dodatkowego naliczenia</span></div>
+            <div><strong>✓</strong><span>Diagnostyka źródeł i filtrów dla administratora</span></div>
             <div><strong>✓</strong><span>Opis firmy i godziny otwarcia, gdy dane są dostępne</span></div>
             <div><strong>✓</strong><span>Pakiety 3, 50, 100, 200, 500 i 1000 wyszukiwań</span></div>
           </div>

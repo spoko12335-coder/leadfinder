@@ -1,4 +1,4 @@
-const CACHE = "leadfinder-v6-3-missing-search-function-fix";
+const CACHE = "leadfinder-v6-4-better-results";
 const ASSETS = [
   "./",
   "./index.html",

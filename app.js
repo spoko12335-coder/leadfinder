@@ -6,6 +6,9 @@ const SEARCH_MAX_WAIT_MS = 11000;
 const OVERPASS_HEDGE_DELAY_MS = 2800;
 const SHARED_CACHE_LOOKUP_TIMEOUT_MS = 800;
 const SHARED_CACHE_WRITE_TIMEOUT_MS = 2500;
+const MAX_OVERPASS_ELEMENTS = 250;
+const MAX_AUTOMATIC_RADIUS = 30000;
+const READY_LEADS_BEFORE_STOP = 6;
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -44,6 +47,8 @@ const state = {
   lastSearchCacheScope: "",
   lastSearchDataSource: "",
   sharedCacheAvailable: true,
+  searchDiagnostics: null,
+  lastEffectiveRadius: 0,
   deferredPrompt: null
 };
 
@@ -256,6 +261,7 @@ function bindEvents() {
   $("#onlyNoWebsite").addEventListener("change", renderResults);
   $("#hideUnnamed").addEventListener("change", renderResults);
   $("#onlyContact").addEventListener("change", renderResults);
+  $("#onlyVerification").addEventListener("change", renderResults);
   $("#onlyPhone").addEventListener("change", renderResults);
   $("#onlySocial").addEventListener("change", renderResults);
   $("#sortResults").addEventListener("change", renderResults);
@@ -1004,7 +1010,8 @@ function handlePurposeChange() {
   $("#salesOfferFields").classList.toggle("hidden", !salesMode);
   $("#offerName").required = salesMode;
   $("#onlyNoWebsite").checked = !salesMode;
-  $("#onlyContact").checked = true;
+  $("#onlyContact").checked = false;
+  $("#onlyVerification").checked = false;
   $("#purposeHint").textContent = salesMode
     ? "Znajdziemy firmy, do których możesz kierować ofertę produktu lub usługi. Firmy mogą posiadać własną stronę WWW."
     : "Znajdziemy firmy, które w danych OpenStreetMap nie mają podanej własnej strony internetowej.";
@@ -1115,62 +1122,27 @@ async function handleSearch(event) {
     );
     reserved = true;
 
-    let searchResponse = await fetchBusinessesFast(
-      location.lat,
-      location.lon,
-      radius,
-      categoryDefinition,
-      city
-    );
-
-    let normalizedResults = normalizeBusinesses(
-      searchResponse.elements,
+    const adaptiveSearch = await performAdaptiveBusinessSearch({
+      location,
+      selectedRadius: radius,
       categoryDefinition,
       city,
       purpose,
       offerName,
       offerBenefit
-    );
+    });
 
-    let usableResults = normalizedResults
-      .filter(company => isUsableLead(company, purpose))
-      .slice(0, MAX_RESULTS_PER_SEARCH);
-
-    if (!usableResults.length && searchResponse.cacheHit) {
-      setLoadingStage("Pamięć nie zawiera dobrych leadów — odświeżam dane…");
-
-      invalidateBusinessCache(searchResponse.cacheKey);
-
-      searchResponse = await fetchBusinessesFast(
-        location.lat,
-        location.lon,
-        radius,
-        categoryDefinition,
-        city,
-        { bypassCache: true }
-      );
-
-      normalizedResults = normalizeBusinesses(
-        searchResponse.elements,
-        categoryDefinition,
-        city,
-        purpose,
-        offerName,
-        offerBenefit
-      );
-
-      usableResults = normalizedResults
-        .filter(company => isUsableLead(company, purpose))
-        .slice(0, MAX_RESULTS_PER_SEARCH);
-    }
-
-    state.results = usableResults;
+    const searchResponse = adaptiveSearch.searchResponse;
+    state.results = adaptiveSearch.results;
+    state.searchDiagnostics = adaptiveSearch.diagnostics;
+    state.lastEffectiveRadius = adaptiveSearch.effectiveRadius;
 
     state.lastSearch = {
       city,
       category,
       categoryLabel: categoryDefinition.label,
       radius,
+      effectiveRadius: adaptiveSearch.effectiveRadius,
       purpose,
       offerName,
       offerBenefit,
@@ -1193,11 +1165,10 @@ async function handleSearch(event) {
       reserved = false;
       resultsSection.classList.add("hidden");
       emptyState.classList.remove("hidden");
-      $("#emptyState h3").textContent = "Brak firm z publicznym kontaktem";
+      $("#emptyState h3").textContent = "Nie znaleziono odpowiednich firm";
       $("#emptyState p").textContent =
-        purpose === "website"
-          ? "OpenStreetMap nie zawiera w tym obszarze firm bez strony WWW, które mają telefon, e-mail lub social media. Wyszukiwanie nie zostało odjęte z pakietu."
-          : "OpenStreetMap nie zawiera w tym obszarze firm z publicznym telefonem, e-mailem, social media ani stroną WWW. Wyszukiwanie nie zostało odjęte z pakietu.";
+        `Sprawdziliśmy obszar do ${formatDistance(adaptiveSearch.effectiveRadius)}. ` +
+        "Nie znaleziono firm z nazwą, lokalizacją i danymi wystarczającymi do dalszej weryfikacji. Wyszukiwanie nie zostało odjęte z pakietu.";
       return;
     }
 
@@ -2196,6 +2167,261 @@ async function geocodeCity(city) {
   }
 }
 
+async function performAdaptiveBusinessSearch({
+  location,
+  selectedRadius,
+  categoryDefinition,
+  city,
+  purpose,
+  offerName,
+  offerBenefit
+}) {
+  const radiusSteps = buildAdaptiveRadiusSteps(selectedRadius);
+  let accumulatedElements = [];
+  let lastResponse = {
+    elements: [],
+    source: "",
+    cacheHit: false,
+    cacheScope: "",
+    cacheKey: ""
+  };
+  let normalized = [];
+  let classified = { ready: [], verification: [], excluded: [] };
+  const sourceNames = new Set();
+  const cacheScopes = new Set();
+  const radiusDiagnostics = [];
+
+  for (let index = 0; index < radiusSteps.length; index += 1) {
+    const currentRadius = radiusSteps[index];
+
+    setLoadingStage(
+      index === 0
+        ? `Szukam firm w promieniu ${formatDistance(currentRadius)}…`
+        : `Znalazłem za mało kontaktów — rozszerzam do ${formatDistance(currentRadius)}…`
+    );
+
+    let response = await fetchBusinessesFast(
+      location.lat,
+      location.lon,
+      currentRadius,
+      categoryDefinition,
+      city
+    );
+
+    let currentElements = response.elements || [];
+
+    if (!currentElements.length && response.cacheHit) {
+      invalidateBusinessCache(response.cacheKey);
+      response = await fetchBusinessesFast(
+        location.lat,
+        location.lon,
+        currentRadius,
+        categoryDefinition,
+        city,
+        { bypassCache: true }
+      );
+      currentElements = response.elements || [];
+    }
+
+    accumulatedElements = deduplicateRawBusinessElements([
+      ...accumulatedElements,
+      ...currentElements
+    ]);
+
+    normalized = normalizeBusinesses(
+      accumulatedElements,
+      categoryDefinition,
+      city,
+      purpose,
+      offerName,
+      offerBenefit
+    );
+
+    classified = classifySearchLeads(normalized, purpose);
+
+    if (response.source) sourceNames.add(response.source);
+    if (response.cacheScope) cacheScopes.add(response.cacheScope);
+
+    radiusDiagnostics.push({
+      radius: currentRadius,
+      raw: currentElements.length,
+      accumulated: accumulatedElements.length,
+      ready: classified.ready.length,
+      verification: classified.verification.length,
+      source: response.source || "brak"
+    });
+
+    lastResponse = response;
+
+    const totalCandidates =
+      classified.ready.length + classified.verification.length;
+
+    if (
+      classified.ready.length >= MAX_RESULTS_PER_SEARCH ||
+      (
+        classified.ready.length >= READY_LEADS_BEFORE_STOP &&
+        totalCandidates >= MAX_RESULTS_PER_SEARCH
+      )
+    ) {
+      break;
+    }
+  }
+
+  const selectedResults = [
+    ...classified.ready,
+    ...classified.verification
+  ].slice(0, MAX_RESULTS_PER_SEARCH);
+
+  const effectiveRadius =
+    radiusDiagnostics.at(-1)?.radius || selectedRadius;
+
+  const diagnostics = createSearchDiagnostics({
+    rawElements: accumulatedElements,
+    normalized,
+    classified,
+    selectedResults,
+    selectedRadius,
+    effectiveRadius,
+    radiusDiagnostics
+  });
+
+  return {
+    results: selectedResults,
+    effectiveRadius,
+    diagnostics,
+    searchResponse: {
+      ...lastResponse,
+      source: [...sourceNames].filter(Boolean).join(" + ") ||
+        lastResponse.source ||
+        "openstreetmap",
+      cacheHit: cacheScopes.size > 0 ||
+        radiusDiagnostics.some(item => /cache|pamię/i.test(item.source)),
+      cacheScope: cacheScopes.has("shared")
+        ? "shared"
+        : cacheScopes.has("local")
+          ? "local"
+          : ""
+    }
+  };
+}
+
+function buildAdaptiveRadiusSteps(selectedRadius) {
+  const start = Math.max(1000, Number(selectedRadius) || 10000);
+  const candidates = [
+    start,
+    Math.max(start, Math.round(start * 1.5 / 1000) * 1000),
+    Math.max(start, Math.round(start * 2 / 1000) * 1000)
+  ]
+    .map(value => Math.min(value, MAX_AUTOMATIC_RADIUS));
+
+  return [...new Set(candidates)].sort((a, b) => a - b);
+}
+
+function classifySearchLeads(companies, purpose) {
+  const ready = [];
+  const verification = [];
+  const excluded = [];
+
+  companies.forEach(company => {
+    const tier = determineLeadTier(company, purpose);
+    company.leadTier = tier;
+    company.verificationReason = buildVerificationReason(company, purpose);
+
+    if (tier === "ready") {
+      ready.push(company);
+      return;
+    }
+
+    if (tier === "verification") {
+      company.leadScore = Math.min(company.leadScore, 39);
+      company.leadQuality = leadQuality(company.leadScore);
+      verification.push(company);
+      return;
+    }
+
+    excluded.push(company);
+  });
+
+  const sorter = (a, b) =>
+    b.leadScore - a.leadScore ||
+    Number(Boolean(b.address && b.address !== "Adres niepodany w danych")) -
+      Number(Boolean(a.address && a.address !== "Adres niepodany w danych")) ||
+    a.name.localeCompare(b.name, "pl");
+
+  ready.sort(sorter);
+  verification.sort(sorter);
+
+  return { ready, verification, excluded };
+}
+
+function determineLeadTier(company, purpose) {
+  if (!company.hasRealName) return "excluded";
+
+  const hasLocation = Boolean(
+    (company.address &&
+      company.address !== "Adres niepodany w danych") ||
+    (Number.isFinite(Number(company.lat)) &&
+      Number.isFinite(Number(company.lon)))
+  );
+
+  if (purpose === "website") {
+    if (company.hasWebsite) return "excluded";
+    if (hasDirectContact(company)) return "ready";
+    return hasLocation ? "verification" : "excluded";
+  }
+
+  if (hasSalesContact(company)) return "ready";
+  return hasLocation ? "verification" : "excluded";
+}
+
+function buildVerificationReason(company, purpose) {
+  if (determineLeadTier(company, purpose) !== "verification") return "";
+
+  if (purpose === "website") {
+    return "Brak publicznego telefonu, e-maila i social media. Firma nie ma podanej strony WWW — sprawdź kontakt w Google, Facebooku lub CEIDG.";
+  }
+
+  return "Brak publicznego kanału kontaktu w źródle. Sprawdź firmę w Google, Facebooku lub CEIDG.";
+}
+
+function createSearchDiagnostics({
+  rawElements,
+  normalized,
+  classified,
+  selectedResults,
+  selectedRadius,
+  effectiveRadius,
+  radiusDiagnostics
+}) {
+  const withWebsite = normalized.filter(company => company.hasWebsite).length;
+  const withoutWebsite = normalized.length - withWebsite;
+  const withDirectContact = normalized.filter(hasDirectContact).length;
+  const withoutRealName = normalized.filter(company => !company.hasRealName).length;
+
+  return {
+    rawCount: rawElements.length,
+    normalizedCount: normalized.length,
+    readyCount: classified.ready.length,
+    verificationCount: classified.verification.length,
+    excludedCount: classified.excluded.length,
+    displayedCount: selectedResults.length,
+    withWebsite,
+    withoutWebsite,
+    withDirectContact,
+    withoutRealName,
+    selectedRadius,
+    effectiveRadius,
+    autoExpanded: effectiveRadius > selectedRadius,
+    radiusDiagnostics
+  };
+}
+
+function formatDistance(metres) {
+  const value = Number(metres || 0);
+  if (value < 1000) return `${value} m`;
+  return `${Math.round(value / 1000)} km`;
+}
+
 async function fetchBusinessesFast(
   lat,
   lon,
@@ -2220,7 +2446,12 @@ async function fetchBusinessesFast(
         source: cached.source || "local-cache",
         cacheHit: true,
         cacheScope: "local",
-        cacheKey
+        cacheKey,
+        diagnostics: cached.diagnostics || {
+          combined: cached.elements.length,
+          overpass: null,
+          nominatim: null
+        }
       };
     }
 
@@ -2239,7 +2470,12 @@ async function fetchBusinessesFast(
         source: sharedCached.source || "shared-cache",
         cacheHit: true,
         cacheScope: "shared",
-        cacheKey
+        cacheKey,
+        diagnostics: {
+          combined: sharedCached.elements.length,
+          overpass: null,
+          nominatim: null
+        }
       };
     }
   }
@@ -2306,7 +2542,18 @@ async function fetchBusinessesFast(
       ? "openstreetmap"
       : "nominatim";
 
-  setCachedBusinessElements(cacheKey, combined, source);
+  const fetchDiagnostics = {
+    overpass: overpassElements.length,
+    nominatim: nominatimElements.length,
+    combined: combined.length
+  };
+
+  setCachedBusinessElements(
+    cacheKey,
+    combined,
+    source,
+    fetchDiagnostics
+  );
 
   void putSharedBusinessElements({
     cacheKey,
@@ -2325,7 +2572,8 @@ async function fetchBusinessesFast(
     source,
     cacheHit: false,
     cacheScope: "",
-    cacheKey
+    cacheKey,
+    diagnostics: fetchDiagnostics
   };
 }
 
@@ -2342,7 +2590,7 @@ async function fetchOverpassHedged(lat, lon, radius, selectors) {
 (
 ${lines}
 );
-out center 80;`;
+out center ${MAX_OVERPASS_ELEMENTS};`;
 
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
@@ -2658,11 +2906,17 @@ function getCachedBusinessElements(cacheKey) {
   return null;
 }
 
-function setCachedBusinessElements(cacheKey, elements, source) {
+function setCachedBusinessElements(
+  cacheKey,
+  elements,
+  source,
+  diagnostics = null
+) {
   const item = {
     createdAt: Date.now(),
     source,
-    elements: elements.slice(0, 100)
+    diagnostics,
+    elements: elements.slice(0, MAX_OVERPASS_ELEMENTS)
   };
 
   state.searchCache.set(cacheKey, item);
@@ -3061,13 +3315,7 @@ function hasSalesContact(company) {
 }
 
 function isUsableLead(company, purpose = company.leadPurpose || "website") {
-  if (!company.hasRealName) return false;
-
-  if (purpose === "website") {
-    return !company.hasWebsite && hasDirectContact(company);
-  }
-
-  return hasSalesContact(company);
+  return determineLeadTier(company, purpose) !== "excluded";
 }
 
 function contactChannelCount(company, purpose = company.leadPurpose || "website") {
@@ -3150,9 +3398,11 @@ function getFilteredResults() {
     if ($("#hideUnnamed").checked && !company.hasRealName) return false;
     if (
       $("#onlyContact").checked &&
-      !(company.leadPurpose === "sales"
-        ? hasSalesContact(company)
-        : hasDirectContact(company))
+      company.leadTier !== "ready"
+    ) return false;
+    if (
+      $("#onlyVerification").checked &&
+      company.leadTier !== "verification"
     ) return false;
     if ($("#onlyPhone").checked && !company.phone) return false;
     if (
@@ -3173,6 +3423,8 @@ function getFilteredResults() {
 
 function renderResults() {
   const list = getFilteredResults();
+  const ready = list.filter(item => item.leadTier === "ready");
+  const verification = list.filter(item => item.leadTier === "verification");
   const noWebsiteCount = list.filter(item => !item.hasWebsite).length;
   const phoneCount = list.filter(item => item.phone).length;
   const emailCount = list.filter(item => item.email).length;
@@ -3181,16 +3433,121 @@ function renderResults() {
   const cacheText = state.lastSearchCacheHit
     ? ` • ${cacheScopeLabel(state.lastSearchCacheScope)}`
     : "";
+  const radiusText = state.lastEffectiveRadius
+    ? ` • obszar: ${formatDistance(state.lastEffectiveRadius)}`
+    : "";
 
   $("#resultsStats").textContent =
-    `Pokazano: ${list.length} z maks. ${MAX_RESULTS_PER_SEARCH} wartościowych leadów • Telefon: ${phoneCount} • E-mail: ${emailCount} • Bez WWW: ${noWebsiteCount} • Czas: ${speedText}${cacheText}`;
+    `Pokazano: ${list.length}/${MAX_RESULTS_PER_SEARCH} • Gotowe: ${ready.length} • Do weryfikacji: ${verification.length} • Telefon: ${phoneCount} • Bez WWW: ${noWebsiteCount} • Czas: ${speedText}${radiusText}${cacheText}`;
 
-  resultsContainer.innerHTML = list
-    .map(company => companyCard(company, "results"))
-    .join("");
+  $("#resultReadyCount").textContent = ready.length;
+  $("#resultVerificationCount").textContent = verification.length;
+  $("#resultRadius").textContent = state.lastEffectiveRadius
+    ? formatDistance(state.lastEffectiveRadius)
+    : "—";
+  $("#resultRawCount").textContent =
+    state.searchDiagnostics?.rawCount ?? "—";
+
+  const sections = [];
+
+  if (ready.length) {
+    sections.push(`
+      <section class="result-group ready-group">
+        <div class="result-group-head">
+          <div>
+            <span class="result-group-kicker">GOTOWE LEADY</span>
+            <h3>Firmy z publicznym kontaktem</h3>
+          </div>
+          <strong>${ready.length}</strong>
+        </div>
+        <div class="cards result-cards">
+          ${ready.map(company => companyCard(company, "results")).join("")}
+        </div>
+      </section>
+    `);
+  }
+
+  if (verification.length) {
+    sections.push(`
+      <section class="result-group verification-group">
+        <div class="result-group-head">
+          <div>
+            <span class="result-group-kicker">DO WERYFIKACJI</span>
+            <h3>Firmy bez kontaktu w publicznym źródle</h3>
+          </div>
+          <strong>${verification.length}</strong>
+        </div>
+        <p class="result-group-description">
+          Te firmy mają nazwę i lokalizację, ale trzeba znaleźć aktualny kontakt w Google, Facebooku albo CEIDG.
+        </p>
+        <div class="cards result-cards">
+          ${verification.map(company => companyCard(company, "results")).join("")}
+        </div>
+      </section>
+    `);
+  }
+
+  resultsContainer.innerHTML = sections.join("");
+  renderSearchDiagnostics();
 
   emptyState.classList.toggle("hidden", list.length !== 0);
 }
+
+function renderSearchDiagnostics() {
+  const panel = $("#searchDiagnostics");
+  const content = $("#searchDiagnosticsContent");
+  const diagnostics = state.searchDiagnostics;
+
+  if (!panel || !content) return;
+
+  const visible = Boolean(state.profile?.is_admin && diagnostics);
+  panel.classList.toggle("hidden", !visible);
+
+  if (!visible) {
+    content.innerHTML = "";
+    return;
+  }
+
+  const rows = diagnostics.radiusDiagnostics
+    .map(item => `
+      <tr>
+        <td>${escapeHtml(formatDistance(item.radius))}</td>
+        <td>${item.raw}</td>
+        <td>${item.accumulated}</td>
+        <td>${item.ready}</td>
+        <td>${item.verification}</td>
+        <td>${escapeHtml(item.source)}</td>
+      </tr>
+    `)
+    .join("");
+
+  content.innerHTML = `
+    <div class="diagnostic-summary">
+      <span>Surowe: <strong>${diagnostics.rawCount}</strong></span>
+      <span>Po normalizacji: <strong>${diagnostics.normalizedCount}</strong></span>
+      <span>Z kontaktem: <strong>${diagnostics.readyCount}</strong></span>
+      <span>Do weryfikacji: <strong>${diagnostics.verificationCount}</strong></span>
+      <span>Odrzucone: <strong>${diagnostics.excludedCount}</strong></span>
+      <span>Bez WWW: <strong>${diagnostics.withoutWebsite}</strong></span>
+    </div>
+    <div class="diagnostic-table-wrap">
+      <table class="diagnostic-table">
+        <thead>
+          <tr>
+            <th>Promień</th>
+            <th>Pobrano</th>
+            <th>Łącznie</th>
+            <th>Gotowe</th>
+            <th>Weryfikacja</th>
+            <th>Źródło</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
 
 async function migrateLegacyLeads() {
   if (!state.session) return;
@@ -3389,6 +3746,12 @@ function companyCard(company, source) {
 
   const followUpDue = source === "saved" && isFollowUpDue(company);
 
+  const tierBadge = source === "results"
+    ? company.leadTier === "verification"
+      ? `<span class="tier-badge verification-tier">DO WERYFIKACJI</span>`
+      : `<span class="tier-badge ready-tier">GOTOWY LEAD</span>`
+    : "";
+
   const socials = [
     company.facebook
       ? `<a href="${escapeAttr(company.facebook)}" target="_blank" rel="noopener">Facebook</a>`
@@ -3407,6 +3770,7 @@ function companyCard(company, source) {
       <div class="badge-stack">
         ${verifiedBadge}
         ${sourceBadge}
+        ${tierBadge}
         ${purposeBadge}
         ${siteBadge}
         <span class="quality-badge ${quality.className}">
@@ -3423,10 +3787,15 @@ function companyCard(company, source) {
       <p>${escapeHtml(company.description || "Brak opisu w danych.")}</p>
     </div>
 
-    <div class="contact-summary">
-      <strong>Dostępny kontakt</strong>
-      <span>${contactChannelCount(company)} ${contactChannelCount(company) === 1 ? "kanał" : "kanały"}</span>
-    </div>
+    ${company.leadTier === "verification" && source === "results"
+      ? `<div class="contact-summary verification-contact-summary">
+          <strong>Kontakt wymaga znalezienia</strong>
+          <span>Google · Facebook · CEIDG</span>
+        </div>`
+      : `<div class="contact-summary">
+          <strong>Dostępny kontakt</strong>
+          <span>${contactChannelCount(company)} ${contactChannelCount(company) === 1 ? "kanał" : "kanały"}</span>
+        </div>`}
 
     <div class="meta">
       ${company.phone ? `<div class="meta-row"><span class="key">Telefon:</span><span><a href="tel:${escapeAttr(company.phone)}">${escapeHtml(company.phone)}</a></span></div>` : ""}
@@ -3459,9 +3828,13 @@ function companyCard(company, source) {
         </div>
       ` : ""}
     ` : `
-      <div class="verification-box">
-        <strong>Weryfikacja:</strong>
-        <span>sprawdź firmę w Google oraz w publicznej wyszukiwarce CEIDG/KRS przed wysłaniem oferty.</span>
+      <div class="verification-box ${company.leadTier === "verification" ? "verification-required" : ""}">
+        <strong>${company.leadTier === "verification" ? "Dlaczego do weryfikacji:" : "Weryfikacja:"}</strong>
+        <span>${escapeHtml(
+          company.leadTier === "verification"
+            ? company.verificationReason
+            : "Sprawdź firmę w Google oraz w publicznej wyszukiwarce CEIDG/KRS przed wysłaniem oferty."
+        )}</span>
       </div>
     `}
 
