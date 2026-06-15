@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#f2faf7" />
+  <title>Dane sprzedawcy — LeadFinder</title>
+  <meta
+    name="description"
+    content="Publiczne dane usługodawcy i sprzedawcy pakietów LeadFinder."
+  />
+  <link rel="stylesheet" href="./legal.css" />
+</head>
+<body>
+  <main class="page-shell">
+    <header class="legal-header">
+      <div class="brand"><span class="brand-mark">⌕</span> LeadFinder</div>
+      <h1>Dane sprzedawcy</h1>
+      <p class="lead">
+        Publiczne dane osoby świadczącej usługę LeadFinder w ramach działalności nierejestrowanej.
+      </p>
+      <p class="version">Aktualizacja danych odbywa się z panelu administratora.</p>
+    </header>
+
+    <nav class="legal-nav" aria-label="Dokumenty">
+      <a href="./index.html">Aplikacja</a>
+      <a href="./terms.html">Regulamin</a>
+      <a href="./privacy.html">Polityka prywatności</a>
+      <a href="./data-sources.html">Źródła danych</a>
+      <a href="./delete-account.html">Usuwanie konta</a>
+    </nav>
+
+    <section class="legal-card">
+      <div id="sellerLoading">Pobieranie danych sprzedawcy…</div>
+
+      <div id="sellerUnavailable" class="notice" hidden>
+        Płatna sprzedaż pakietów nie jest obecnie aktywna. Aplikację można
+        testować w ramach darmowego limitu.
+      </div>
+
+      <div id="sellerData" hidden>
+        <table class="data-table">
+          <tbody>
+            <tr><th>Sprzedawca</th><td id="sellerName"></td></tr>
+            <tr><th>Forma działalności</th><td id="sellerModel"></td></tr>
+            <tr><th>Adres do kontaktu i reklamacji</th><td id="sellerAddress"></td></tr>
+            <tr><th>E-mail reklamacyjny</th><td id="sellerComplaints"></td></tr>
+            <tr><th>E-mail dotyczący płatności</th><td id="sellerPayments"></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p id="sellerError" class="notice" hidden>
+        Nie udało się pobrać danych. Spróbuj ponownie później.
+      </p>
+    </section>
+
+    <footer>
+      LeadFinder · Kamil Mazur ·
+      <a href="mailto:logo.wizytowka@gmail.com">logo.wizytowka@gmail.com</a>
+    </footer>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const client = window.supabase.createClient(
+      "https://dgvhhzfhhwrbhdxaolap.supabase.co",
+      "sb_publishable_ibOSYMgLX6RHRv5wVQIsMg_-njehHH9"
+    );
+
+    async function loadSeller() {
+      const loading = document.getElementById("sellerLoading");
+      const unavailable = document.getElementById("sellerUnavailable");
+      const dataBox = document.getElementById("sellerData");
+      const errorBox = document.getElementById("sellerError");
+
+      try {
+        const { data, error } = await client.rpc("get_public_seller_info");
+        if (error) throw error;
+
+        const seller = Array.isArray(data) ? data[0] : data;
+        loading.hidden = true;
+
+        if (!seller?.sales_enabled) {
+          unavailable.hidden = false;
+          return;
+        }
+
+        document.getElementById("sellerName").textContent =
+          seller.seller_name || "Kamil Mazur";
+        document.getElementById("sellerModel").textContent =
+          seller.business_model_label || "działalność nierejestrowana";
+        document.getElementById("sellerAddress").textContent =
+          seller.correspondence_address || "Brak danych";
+        document.getElementById("sellerComplaints").innerHTML =
+          `<a href="mailto:${seller.complaints_email}">${seller.complaints_email}</a>`;
+        document.getElementById("sellerPayments").innerHTML =
+          `<a href="mailto:${seller.payment_email}">${seller.payment_email}</a>`;
+
+        dataBox.hidden = false;
+      } catch (error) {
+        console.error(error);
+        loading.hidden = true;
+        errorBox.hidden = false;
+      }
+    }
+
+    loadSeller();
+  </script>
+</body>
+</html>

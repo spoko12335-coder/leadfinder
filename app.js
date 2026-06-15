@@ -11,6 +11,8 @@ const MAX_AUTOMATIC_RADIUS = 30000;
 const READY_LEADS_BEFORE_STOP = 6;
 const TOMTOM_FUNCTION_NAME = "search-tomtom-businesses";
 const TOMTOM_TIMEOUT_MS = 9500;
+const TERMS_VERSION = "1.1-2026-06-15";
+const PRIVACY_VERSION = "1.1-2026-06-15";
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -55,6 +57,7 @@ const state = {
   lastTomTomError: "",
   passwordFlowMode: "change",
   accountDeletionBusy: false,
+  legalAcceptanceBusy: false,
   deferredPrompt: null
 };
 
@@ -238,6 +241,7 @@ const editLeadDialog = $("#editLeadDialog");
 const resetRequestDialog = $("#resetRequestDialog");
 const passwordDialog = $("#passwordDialog");
 const deleteAccountDialog = $("#deleteAccountDialog");
+const legalAcceptanceDialog = $("#legalAcceptanceDialog");
 
 verifySearchModules();
 bindEvents();
@@ -326,6 +330,14 @@ function bindEvents() {
   $("#resetRequestForm").addEventListener("submit", requestPasswordReset);
   $("#passwordForm").addEventListener("submit", saveNewPassword);
   $("#deleteAccountForm").addEventListener("submit", deleteAccount);
+  $("#legalAcceptanceForm").addEventListener(
+    "submit",
+    submitLegalAcceptance
+  );
+  $("#legalLogoutBtn").addEventListener("click", logout);
+  legalAcceptanceDialog.addEventListener("cancel", event => {
+    event.preventDefault();
+  });
   $("#deleteConfirmText").addEventListener(
     "input",
     updateDeleteAccountButton
@@ -350,6 +362,26 @@ function bindEvents() {
   $("#refreshAdminAnalyticsBtn").addEventListener("click", loadAdminAnalytics);
   $("#adminAnalyticsRange").addEventListener("change", loadAdminAnalytics);
   $("#paymentSettingsForm").addEventListener("submit", savePaymentSettings);
+  $("#unregisteredSaleForm").addEventListener(
+    "submit",
+    addManualUnregisteredSale
+  );
+  $("#refreshUnregisteredDashboardBtn").addEventListener(
+    "click",
+    loadUnregisteredDashboard
+  );
+  $("#exportUnregisteredSalesBtn").addEventListener(
+    "click",
+    exportUnregisteredSales
+  );
+  $("#unregisteredSalesTable").addEventListener(
+    "click",
+    handleUnregisteredSaleTableClick
+  );
+  $("#settingSalesEnabled").addEventListener(
+    "change",
+    updateBusinessSettingsReadiness
+  );
   $("#copyPaymentBtn").addEventListener("click", copyPaymentDetails);
   $("#loginForm").addEventListener("submit", login);
   $("#registerForm").addEventListener("submit", register);
@@ -570,9 +602,19 @@ async function register(event) {
   const email = $("#registerEmail").value.trim();
   const password = $("#registerPassword").value;
   const confirmPassword = $("#registerPasswordConfirm").value;
+  const termsAccepted = $("#registerTerms").checked;
+  const privacyAcknowledged = $("#registerPrivacy").checked;
 
   if (password !== confirmPassword) {
     showAuthMessage("Hasła nie są identyczne.", true);
+    return;
+  }
+
+  if (!termsAccepted || !privacyAcknowledged) {
+    showAuthMessage(
+      "Aby utworzyć konto, zaakceptuj Regulamin i potwierdź zapoznanie się z Polityką prywatności.",
+      true
+    );
     return;
   }
 
@@ -585,13 +627,21 @@ async function register(event) {
       password,
       options: {
         emailRedirectTo: redirectTo,
-        data: { full_name: fullName }
+        data: {
+          full_name: fullName,
+          terms_accepted: true,
+          terms_version: TERMS_VERSION,
+          privacy_acknowledged: true,
+          privacy_version: PRIVACY_VERSION,
+          legal_accepted_at: new Date().toISOString()
+        }
       }
     });
 
     if (error) throw error;
 
     if (data.session) {
+      await persistCurrentLegalAcceptance();
       authDialog.close();
       showToast("Konto zostało utworzone.");
     } else {
@@ -604,6 +654,112 @@ async function register(event) {
     showAuthMessage(authErrorMessage(error), true);
   } finally {
     setAuthBusy(false);
+  }
+}
+
+function hasCurrentLegalAcceptance() {
+  return Boolean(
+    state.profile &&
+    state.profile.terms_version === TERMS_VERSION &&
+    state.profile.privacy_version === PRIVACY_VERSION &&
+    state.profile.terms_accepted_at &&
+    state.profile.privacy_acknowledged_at
+  );
+}
+
+async function syncLegalAcceptanceFromAuthMetadata() {
+  if (!state.session || !state.profile || hasCurrentLegalAcceptance()) {
+    return;
+  }
+
+  const metadata = state.session.user?.user_metadata || {};
+
+  const acceptedDuringRegistration =
+    metadata.terms_accepted === true &&
+    metadata.terms_version === TERMS_VERSION &&
+    metadata.privacy_acknowledged === true &&
+    metadata.privacy_version === PRIVACY_VERSION;
+
+  if (!acceptedDuringRegistration) return;
+
+  await persistCurrentLegalAcceptance();
+}
+
+function ensureCurrentLegalAcceptance() {
+  if (!state.session || !state.profile || hasCurrentLegalAcceptance()) {
+    if (legalAcceptanceDialog?.open) {
+      legalAcceptanceDialog.close();
+    }
+    return;
+  }
+
+  $("#legalTermsVersion").textContent = TERMS_VERSION;
+  $("#legalPrivacyVersion").textContent = PRIVACY_VERSION;
+  $("#legalAcceptTerms").checked = false;
+  $("#legalAcceptPrivacy").checked = false;
+  setDialogMessage("#legalAcceptanceMessage", "", false, true);
+
+  if (!legalAcceptanceDialog.open) {
+    legalAcceptanceDialog.showModal();
+  }
+}
+
+async function submitLegalAcceptance(event) {
+  event.preventDefault();
+
+  if (
+    !$("#legalAcceptTerms").checked ||
+    !$("#legalAcceptPrivacy").checked
+  ) {
+    setDialogMessage(
+      "#legalAcceptanceMessage",
+      "Zaznacz oba pola, aby dalej korzystać z aplikacji.",
+      true
+    );
+    return;
+  }
+
+  const button = $("#legalAcceptSubmit");
+  state.legalAcceptanceBusy = true;
+  button.disabled = true;
+  button.textContent = "Zapisywanie…";
+
+  try {
+    await persistCurrentLegalAcceptance();
+    legalAcceptanceDialog.close();
+    showToast("Dokumenty zostały zaakceptowane.");
+  } catch (error) {
+    console.error("Błąd akceptacji dokumentów:", error);
+    setDialogMessage(
+      "#legalAcceptanceMessage",
+      "Nie udało się zapisać akceptacji. Spróbuj ponownie.",
+      true
+    );
+  } finally {
+    state.legalAcceptanceBusy = false;
+    button.disabled = false;
+    button.textContent = "Akceptuję i przechodzę dalej";
+  }
+}
+
+async function persistCurrentLegalAcceptance() {
+  const { data, error } = await supabaseClient.rpc(
+    "accept_current_legal_documents"
+  );
+
+  if (error) throw error;
+
+  const accepted = Array.isArray(data) ? data[0] : data;
+
+  if (state.profile) {
+    state.profile.terms_version =
+      accepted?.terms_version || TERMS_VERSION;
+    state.profile.terms_accepted_at =
+      accepted?.terms_accepted_at || new Date().toISOString();
+    state.profile.privacy_version =
+      accepted?.privacy_version || PRIVACY_VERSION;
+    state.profile.privacy_acknowledged_at =
+      accepted?.privacy_acknowledged_at || new Date().toISOString();
   }
 }
 
@@ -1042,7 +1198,7 @@ async function loadProfile() {
 
   const { data, error } = await supabaseClient
     .from("profiles")
-    .select("id,email,full_name,is_admin")
+    .select("id,email,full_name,is_admin,terms_version,terms_accepted_at,privacy_version,privacy_acknowledged_at")
     .eq("id", state.session.user.id)
     .single();
 
@@ -1051,6 +1207,8 @@ async function loadProfile() {
     state.profile = null;
   } else {
     state.profile = data;
+    await syncLegalAcceptanceFromAuthMetadata();
+    ensureCurrentLegalAcceptance();
   }
 
   updateAuthUI();
@@ -1068,6 +1226,7 @@ async function loadPaymentSettings() {
   }
 
   state.paymentSettings = Array.isArray(data) ? data[0] : data;
+  updatePlanPurchaseAvailability();
 }
 
 async function loadMyOrders() {
@@ -1128,6 +1287,13 @@ async function createPlanOrder(planCode) {
     return;
   }
 
+  if (!state.paymentSettings?.sales_enabled) {
+    showToast(
+      "Sprzedaż płatnych pakietów nie została jeszcze uruchomiona."
+    );
+    return;
+  }
+
   const button = document.querySelector(`[data-plan-code="${CSS.escape(planCode)}"]`);
   if (button) button.disabled = true;
 
@@ -1146,7 +1312,14 @@ async function createPlanOrder(planCode) {
     paymentDialog.showModal();
   } catch (error) {
     console.error("Błąd zamówienia:", error);
-    showToast("Nie udało się utworzyć zamówienia.");
+
+    const message = String(error?.message || "");
+    showToast(
+      message.includes("SALES_NOT_ENABLED") ||
+      message.includes("SELLER_DETAILS_INCOMPLETE")
+        ? "Sprzedaż jest chwilowo niedostępna. Administrator musi uzupełnić dane sprzedawcy."
+        : "Nie udało się utworzyć zamówienia."
+    );
   } finally {
     if (button) button.disabled = false;
   }
@@ -1164,7 +1337,9 @@ function renderPaymentDialog() {
   $("#paymentInstructions").innerHTML = `
     <div class="payment-row"><span>Kwota</span><strong>${formatPrice(order.amount_pln)}</strong></div>
     <div class="payment-row"><span>Tytuł przelewu</span><strong>${escapeHtml(order.order_code)}</strong></div>
-    <div class="payment-row"><span>Odbiorca</span><strong>${escapeHtml(settings.seller_name || "Do uzupełnienia przez administratora")}</strong></div>
+    <div class="payment-row"><span>Sprzedawca</span><strong>${escapeHtml(settings.seller_name || "Do uzupełnienia przez administratora")}</strong></div>
+    <div class="payment-row"><span>Forma działalności</span><strong>${escapeHtml(settings.business_model_label || "działalność nierejestrowana")}</strong></div>
+    <div class="payment-row"><span>Adres do reklamacji</span><strong>${escapeHtml(settings.correspondence_address || "Nie skonfigurowano")}</strong></div>
     <div class="payment-row"><span>Numer konta</span><strong>${hasAccount ? escapeHtml(account) : "Nie skonfigurowano"}</strong></div>
     ${settings.bank_name ? `<div class="payment-row"><span>Bank</span><strong>${escapeHtml(settings.bank_name)}</strong></div>` : ""}
     ${!hasAccount ? `<div class="payment-warning">Numer konta nie został jeszcze dodany. Skontaktuj się: <a href="mailto:${escapeAttr(settings.payment_email || "logo.wizytowka@gmail.com")}">${escapeHtml(settings.payment_email || "logo.wizytowka@gmail.com")}</a></div>` : ""}
@@ -1202,7 +1377,8 @@ async function openAdminDialog() {
   await Promise.all([
     loadPaymentSettings(),
     loadAdminOrders(),
-    loadAdminAnalytics()
+    loadAdminAnalytics(),
+    loadUnregisteredDashboard()
   ]);
   fillPaymentSettingsForm();
   adminDialog.showModal();
@@ -1210,32 +1386,389 @@ async function openAdminDialog() {
 
 function fillPaymentSettingsForm() {
   const settings = state.paymentSettings || {};
-  $("#settingSellerName").value = settings.seller_name || "";
+  $("#settingSellerName").value = settings.seller_name || "Kamil Mazur";
+  $("#settingBusinessModel").value =
+    settings.business_model_label || "działalność nierejestrowana";
+  $("#settingCorrespondenceAddress").value =
+    settings.correspondence_address || "";
+  $("#settingComplaintsEmail").value =
+    settings.complaints_email ||
+    settings.payment_email ||
+    "logo.wizytowka@gmail.com";
   $("#settingBankAccount").value = settings.bank_account || "";
   $("#settingBankName").value = settings.bank_name || "";
-  $("#settingPaymentEmail").value = settings.payment_email || "logo.wizytowka@gmail.com";
+  $("#settingPaymentEmail").value =
+    settings.payment_email || "logo.wizytowka@gmail.com";
   $("#settingInstructions").value = settings.instructions || "";
+  $("#settingSalesEnabled").checked = Boolean(settings.sales_enabled);
+  updateBusinessSettingsReadiness();
 }
 
 async function savePaymentSettings(event) {
   event.preventDefault();
 
-  const { data, error } = await supabaseClient.rpc("admin_save_payment_settings", {
-    p_seller_name: $("#settingSellerName").value.trim(),
-    p_bank_account: $("#settingBankAccount").value.replace(/\s+/g, ""),
-    p_bank_name: $("#settingBankName").value.trim(),
-    p_payment_email: $("#settingPaymentEmail").value.trim(),
-    p_instructions: $("#settingInstructions").value.trim()
-  });
+  const salesEnabled = $("#settingSalesEnabled").checked;
+  const correspondenceAddress =
+    $("#settingCorrespondenceAddress").value.trim();
+  const complaintsEmail =
+    $("#settingComplaintsEmail").value.trim();
+  const bankAccount =
+    $("#settingBankAccount").value.replace(/\s+/g, "");
+
+  if (
+    salesEnabled &&
+    (
+      !correspondenceAddress ||
+      !complaintsEmail ||
+      bankAccount.length !== 26
+    )
+  ) {
+    showToast(
+      "Aby uruchomić sprzedaż, uzupełnij adres, e-mail reklamacyjny i 26-cyfrowy numer konta."
+    );
+    return;
+  }
+
+  const { data, error } = await supabaseClient.rpc(
+    "admin_save_business_settings",
+    {
+      p_seller_name: $("#settingSellerName").value.trim(),
+      p_correspondence_address: correspondenceAddress,
+      p_complaints_email: complaintsEmail,
+      p_bank_account: bankAccount,
+      p_bank_name: $("#settingBankName").value.trim(),
+      p_payment_email: $("#settingPaymentEmail").value.trim(),
+      p_instructions: $("#settingInstructions").value.trim(),
+      p_sales_enabled: salesEnabled
+    }
+  );
 
   if (error) {
     console.error(error);
-    showToast("Nie udało się zapisać danych płatności.");
+    showToast(
+      String(error.message || "").includes("SELLER_DETAILS_INCOMPLETE")
+        ? "Nie można uruchomić sprzedaży bez kompletnych danych sprzedawcy."
+        : "Nie udało się zapisać ustawień sprzedaży."
+    );
     return;
   }
 
   state.paymentSettings = Array.isArray(data) ? data[0] : data;
-  showToast("Dane płatności zapisane.");
+  fillPaymentSettingsForm();
+  updatePlanPurchaseAvailability();
+  showToast("Ustawienia działalności i płatności zapisane.");
+}
+
+function updateBusinessSettingsReadiness() {
+  const status = $("#businessReadinessStatus");
+  if (!status) return;
+
+  const address =
+    $("#settingCorrespondenceAddress")?.value.trim() || "";
+  const complaintsEmail =
+    $("#settingComplaintsEmail")?.value.trim() || "";
+  const bankAccount =
+    $("#settingBankAccount")?.value.replace(/\s+/g, "") || "";
+  const enabled = Boolean($("#settingSalesEnabled")?.checked);
+
+  const complete =
+    Boolean(address) &&
+    Boolean(complaintsEmail) &&
+    bankAccount.length === 26;
+
+  status.className =
+    `business-readiness ${enabled && complete
+      ? "business-ready"
+      : "business-not-ready"}`;
+
+  status.innerHTML = enabled && complete
+    ? `<strong>Sprzedaż aktywna</strong>
+       <span>Dane sprzedawcy są kompletne. Klienci mogą tworzyć zamówienia.</span>`
+    : `<strong>Sprzedaż zablokowana</strong>
+       <span>Uzupełnij rzeczywisty adres do reklamacji, e-mail oraz numer konta, a następnie włącz sprzedaż.</span>`;
+}
+
+function updatePlanPurchaseAvailability() {
+  const enabled = Boolean(state.paymentSettings?.sales_enabled);
+  const notice = $("#salesAvailabilityNotice");
+
+  $$(".buy-plan").forEach(button => {
+    button.disabled = !enabled;
+    button.title = enabled
+      ? ""
+      : "Sprzedaż płatnych pakietów nie została jeszcze uruchomiona.";
+  });
+
+  if (notice) {
+    notice.className = `sales-availability-notice ${
+      enabled ? "sales-available" : "sales-unavailable"
+    }`;
+
+    notice.innerHTML = enabled
+      ? `<strong>Sprzedaż aktywna</strong>
+         <span>Dane sprzedawcy:
+           <a href="./seller-info.html" target="_blank" rel="noopener">sprawdź przed zakupem</a>.
+         </span>`
+      : `<strong>Tryb testowy</strong>
+         <span>Płatne pakiety są widoczne, ale zakup jest wyłączony do czasu uzupełnienia publicznych danych sprzedawcy.</span>`;
+  }
+}
+
+async function loadUnregisteredDashboard() {
+  if (!state.profile?.is_admin) return;
+
+  const { data, error } = await supabaseClient.rpc(
+    "admin_unregistered_sales_dashboard"
+  );
+
+  if (error) {
+    console.error("Błąd ewidencji działalności nierejestrowanej:", error);
+    $("#unregisteredDashboardError")?.classList.remove("hidden");
+    return;
+  }
+
+  $("#unregisteredDashboardError")?.classList.add("hidden");
+  state.unregisteredDashboard = data || null;
+  renderUnregisteredDashboard();
+}
+
+function renderUnregisteredDashboard() {
+  const data = state.unregisteredDashboard || {};
+  const summary = data.summary || {};
+  const entries = data.entries || [];
+  const total = Number(summary.total_due || 0);
+  const limit = Number(summary.quarter_limit || 0);
+  const remaining = Math.max(0, limit - total);
+  const percentage = limit > 0
+    ? Math.min(100, Math.max(0, total / limit * 100))
+    : 0;
+
+  $("#unregisteredQuarterLabel").textContent =
+    summary.quarter_label || "Bieżący kwartał";
+  $("#unregisteredRevenueTotal").textContent = formatPrice(total);
+  $("#unregisteredRevenueLimit").textContent = formatPrice(limit);
+  $("#unregisteredRevenueRemaining").textContent =
+    formatPrice(remaining);
+  $("#unregisteredSalesCount").textContent =
+    Number(summary.entries_count || 0);
+
+  const progress = $("#unregisteredRevenueProgress");
+  progress.style.width = `${percentage}%`;
+  progress.className =
+    `unregistered-progress-bar ${
+      percentage >= 100
+        ? "progress-danger"
+        : percentage >= 80
+          ? "progress-warning"
+          : "progress-safe"
+    }`;
+
+  const alert = $("#unregisteredRevenueAlert");
+  if (percentage >= 100) {
+    alert.className = "unregistered-alert alert-danger";
+    alert.innerHTML = `
+      <strong>Limit został osiągnięty lub przekroczony</strong>
+      <span>Sprawdź dokładną datę przekroczenia i obowiązki rejestracyjne.</span>
+    `;
+  } else if (percentage >= 80) {
+    alert.className = "unregistered-alert alert-warning";
+    alert.innerHTML = `
+      <strong>Wykorzystano ${percentage.toFixed(1).replace(".", ",")}% limitu</strong>
+      <span>Pozostało ${escapeHtml(formatPrice(remaining))}. Zaplanuj dalszą sprzedaż ostrożnie.</span>
+    `;
+  } else {
+    alert.className = "unregistered-alert alert-safe";
+    alert.innerHTML = `
+      <strong>Limit jest pod kontrolą</strong>
+      <span>Wykorzystano ${percentage.toFixed(1).replace(".", ",")}% limitu kwartalnego.</span>
+    `;
+  }
+
+  renderUnregisteredSalesEntries(entries);
+}
+
+function renderUnregisteredSalesEntries(entries) {
+  const tbody = $("#unregisteredSalesTable");
+  if (!tbody) return;
+
+  if (!entries.length) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8">Brak przychodów w bieżącym kwartale.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  let cumulative = 0;
+
+  tbody.innerHTML = entries.map(entry => {
+    const amount = Number(entry.amount_due || 0);
+    cumulative += amount;
+
+    return `
+      <tr>
+        <td>${escapeHtml(formatDateOnly(entry.sale_date))}</td>
+        <td>${escapeHtml(entry.description || "Sprzedaż")}</td>
+        <td>${escapeHtml(entry.order_code || "wpis ręczny")}</td>
+        <td>${escapeHtml(formatPrice(amount))}</td>
+        <td>${escapeHtml(formatPrice(entry.amount_received || 0))}</td>
+        <td>${escapeHtml(formatPrice(entry.processing_fee || 0))}</td>
+        <td>${escapeHtml(formatPrice(cumulative))}</td>
+        <td>
+          ${entry.source === "manual"
+            ? `<button class="danger-link" data-delete-sale-id="${escapeAttr(entry.id)}" type="button">Usuń</button>`
+            : `<span class="locked-entry">automatycznie</span>`
+          }
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function addManualUnregisteredSale(event) {
+  event.preventDefault();
+
+  const saleDate = $("#manualSaleDate").value;
+  const amountDue = parsePolishMoney($("#manualSaleAmountDue").value);
+  const amountReceived =
+    parsePolishMoney($("#manualSaleAmountReceived").value);
+  const processingFee =
+    parsePolishMoney($("#manualSaleProcessingFee").value);
+  const description = $("#manualSaleDescription").value.trim();
+
+  if (!saleDate || !(amountDue > 0) || !description) {
+    showToast(
+      "Podaj datę, przychód należny większy od 0 i opis sprzedaży."
+    );
+    return;
+  }
+
+  const { error } = await supabaseClient.rpc(
+    "admin_add_unregistered_sale",
+    {
+      p_sale_date: saleDate,
+      p_amount_due: amountDue,
+      p_amount_received: amountReceived || 0,
+      p_processing_fee: processingFee || 0,
+      p_description: description
+    }
+  );
+
+  if (error) {
+    console.error("Błąd ręcznego wpisu sprzedaży:", error);
+    showToast("Nie udało się dodać wpisu do ewidencji.");
+    return;
+  }
+
+  $("#unregisteredSaleForm").reset();
+  $("#manualSaleDate").value = new Date().toISOString().slice(0, 10);
+  showToast("Wpis został dodany do ewidencji.");
+  await loadUnregisteredDashboard();
+}
+
+async function handleUnregisteredSaleTableClick(event) {
+  const button = event.target.closest("[data-delete-sale-id]");
+  if (!button) return;
+
+  if (!confirm("Usunąć ten ręczny wpis z ewidencji?")) return;
+
+  const { error } = await supabaseClient.rpc(
+    "admin_delete_manual_unregistered_sale",
+    { p_sale_id: button.dataset.deleteSaleId }
+  );
+
+  if (error) {
+    console.error("Błąd usuwania wpisu:", error);
+    showToast("Nie udało się usunąć wpisu.");
+    return;
+  }
+
+  showToast("Ręczny wpis został usunięty.");
+  await loadUnregisteredDashboard();
+}
+
+function exportUnregisteredSales() {
+  const data = state.unregisteredDashboard || {};
+  const entries = data.entries || [];
+
+  if (!entries.length) {
+    showToast("Brak wpisów do eksportu.");
+    return;
+  }
+
+  let cumulative = 0;
+  const headers = [
+    "Data sprzedaży",
+    "Opis",
+    "Kod zamówienia",
+    "Przychód należny",
+    "Kwota otrzymana",
+    "Prowizja operatora",
+    "Suma narastająco",
+    "Źródło"
+  ];
+
+  const rows = entries.map(entry => {
+    cumulative += Number(entry.amount_due || 0);
+
+    return [
+      entry.sale_date,
+      entry.description || "",
+      entry.order_code || "",
+      Number(entry.amount_due || 0).toFixed(2),
+      Number(entry.amount_received || 0).toFixed(2),
+      Number(entry.processing_fee || 0).toFixed(2),
+      cumulative.toFixed(2),
+      entry.source || ""
+    ];
+  });
+
+  downloadCsvRows(
+    [headers, ...rows],
+    `leadfinder-ewidencja-${data.summary?.quarter_key || "kwartal"}.csv`
+  );
+}
+
+function downloadCsvRows(rows, filename) {
+  const csv = rows.map(row =>
+    row.map(value => `"${String(value ?? "").replaceAll('"', '""')}"`)
+      .join(";")
+  ).join("\n");
+
+  const blob = new Blob(
+    ["\ufeff", csv],
+    { type: "text/csv;charset=utf-8" }
+  );
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function parsePolishMoney(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .replace(",", ".");
+
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function formatDateOnly(value) {
+  if (!value) return "—";
+
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat("pl-PL", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric"
+  }).format(date);
 }
 
 async function loadAdminOrders() {
@@ -1488,8 +2021,11 @@ async function approveOrder(orderId) {
     return;
   }
 
-  showToast("Wpłata potwierdzona. Pakiet został aktywowany.");
-  await loadAdminOrders();
+  showToast("Wpłata potwierdzona. Pakiet został aktywowany i wpisany do ewidencji.");
+  await Promise.all([
+    loadAdminOrders(),
+    loadUnregisteredDashboard()
+  ]);
 }
 
 async function rejectOrder(orderId) {
@@ -1768,6 +2304,11 @@ async function handleSearch(event) {
 
   if (!state.session) {
     openAuthDialog();
+    return;
+  }
+
+  if (!hasCurrentLegalAcceptance()) {
+    ensureCurrentLegalAcceptance();
     return;
   }
 

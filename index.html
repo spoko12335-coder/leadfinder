@@ -50,6 +50,14 @@
       <p class="guest-privacy">
         Rejestracja jest bezpłatna. Dane konta są używane do zapisywania leadów i limitu wyszukiwań.
       </p>
+
+      <div class="guest-legal-links">
+        <a href="./terms.html">Regulamin</a>
+        <a href="./privacy.html">Polityka prywatności</a>
+        <a href="./data-sources.html">Źródła danych</a>
+        <a href="./seller-info.html">Dane sprzedawcy</a>
+        <a href="./delete-account.html">Usuwanie konta</a>
+      </div>
     </div>
   </section>
 
@@ -400,7 +408,7 @@
 
       <section id="aboutView" class="view" aria-labelledby="aboutHeading">
         <div class="panel">
-          <p class="eyebrow">WERSJA 7.0</p>
+          <p class="eyebrow">WERSJA 7.2</p>
           <h2 id="aboutHeading">Pakiety i płatność przelewem</h2>
           <p>
             Każde nowe konto otrzymuje pakiet bezpłatny obejmujący
@@ -433,6 +441,8 @@
             <div><strong>✓</strong><span>Statystyki użytkowników, miast, branż i płatności</span></div>
             <div><strong>✓</strong><span>Odzyskiwanie i bezpieczna zmiana hasła</span></div>
             <div><strong>✓</strong><span>Trwałe usuwanie konta i danych użytkownika</span></div>
+            <div><strong>✓</strong><span>Regulamin, polityka prywatności i publiczna strona usuwania konta</span></div>
+            <div><strong>✓</strong><span>Rejestrowanie wersji zaakceptowanych dokumentów</span></div>
             <div><strong>✓</strong><span>Opis firmy i godziny otwarcia, gdy dane są dostępne</span></div>
             <div><strong>✓</strong><span>Proste pakiety: 3 darmowe oraz 10, 30 i 100 wyszukiwań</span></div>
           </div>
@@ -440,12 +450,45 @@
             Wyższy pakiet można zamówić i opłacić zwykłym przelewem bankowym.
             Administrator zatwierdza wpłatę i aktywuje limit na 30 dni.
           </div>
+
+          <div class="legal-document-grid">
+            <a href="./terms.html">
+              <strong>Regulamin</strong>
+              <span>Zasady konta, pakietów, reklamacji i odpowiedzialności.</span>
+            </a>
+            <a href="./privacy.html">
+              <strong>Polityka prywatności</strong>
+              <span>Dane konta, lokalizacja, okresy przechowywania i prawa użytkownika.</span>
+            </a>
+            <a href="./data-sources.html">
+              <strong>Źródła danych</strong>
+              <span>TomTom, OpenStreetMap, Nominatim i zasady weryfikacji firm.</span>
+            </a>
+            <a href="./delete-account.html">
+              <strong>Usuwanie konta</strong>
+              <span>Publiczna instrukcja wymagana przed publikacją aplikacji.</span>
+            </a>
+          </div>
+
           <p class="attribution">
-            Dane firm © współtwórcy OpenStreetMap, licencja ODbL.
+            Wyniki mogą zawierać dane © TomTom oraz
+            © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>
+            udostępniane na licencji ODbL.
           </p>
         </div>
       </section>
     </main>
+
+    <footer class="legal-footer">
+      <span>LeadFinder · Kamil Mazur · <a href="mailto:logo.wizytowka@gmail.com">logo.wizytowka@gmail.com</a></span>
+      <nav aria-label="Dokumenty prawne">
+        <a href="./terms.html">Regulamin</a>
+        <a href="./privacy.html">Prywatność</a>
+        <a href="./data-sources.html">Źródła danych</a>
+        <a href="./seller-info.html">Sprzedawca</a>
+        <a href="./delete-account.html">Usuń konto</a>
+      </nav>
+    </footer>
 
     <nav class="bottom-nav" aria-label="Nawigacja aplikacji">
       <button class="nav-btn active" data-view="searchView" type="button">
@@ -505,6 +548,26 @@
           Powtórz hasło
           <input id="registerPasswordConfirm" type="password" autocomplete="new-password" minlength="6" required />
         </label>
+        <div class="registration-legal">
+          <label class="legal-check">
+            <input id="registerTerms" type="checkbox" required />
+            <span>
+              Akceptuję
+              <a href="./terms.html" target="_blank" rel="noopener">Regulamin LeadFinder</a>
+              (wersja 1.1-2026-06-15).
+            </span>
+          </label>
+
+          <label class="legal-check">
+            <input id="registerPrivacy" type="checkbox" required />
+            <span>
+              Potwierdzam, że zapoznałem się z
+              <a href="./privacy.html" target="_blank" rel="noopener">Polityką prywatności</a>
+              (wersja 1.1-2026-06-15).
+            </span>
+          </label>
+        </div>
+
         <button class="primary" type="submit">Utwórz darmowe konto</button>
       </form>
 
@@ -515,6 +578,11 @@
       <div class="account-dialog-card">
         <span>Zalogowano jako</span>
         <strong id="accountDialogEmail"></strong>
+      </div>
+      <div class="account-legal-links">
+        <a href="./terms.html" target="_blank" rel="noopener">Regulamin</a>
+        <a href="./privacy.html" target="_blank" rel="noopener">Polityka prywatności</a>
+        <a href="./data-sources.html" target="_blank" rel="noopener">Źródła danych</a>
       </div>
       <button id="accountPlansBtn" class="secondary auth-wide-btn" type="button">Zobacz pakiety</button>
       <button id="changePasswordBtn" class="secondary auth-wide-btn" type="button">Zmień hasło</button>
@@ -528,6 +596,50 @@
     </div>
   </dialog>
 
+
+
+  <dialog id="legalAcceptanceDialog" class="legal-acceptance-dialog">
+    <div class="dialog-head">
+      <div>
+        <p class="eyebrow">AKTUALIZACJA DOKUMENTÓW</p>
+        <h2>Zapoznaj się z zasadami LeadFinder</h2>
+      </div>
+    </div>
+
+    <p class="dialog-intro">
+      Przed dalszym korzystaniem z aplikacji potwierdź aktualne wersje dokumentów.
+      Możesz je otworzyć w nowej karcie i zachować.
+    </p>
+
+    <form id="legalAcceptanceForm" class="auth-form">
+      <label class="legal-check">
+        <input id="legalAcceptTerms" type="checkbox" required />
+        <span>
+          Akceptuję
+          <a href="./terms.html" target="_blank" rel="noopener">Regulamin</a>
+          w wersji <b id="legalTermsVersion">1.0-2026-06-15</b>.
+        </span>
+      </label>
+
+      <label class="legal-check">
+        <input id="legalAcceptPrivacy" type="checkbox" required />
+        <span>
+          Potwierdzam zapoznanie się z
+          <a href="./privacy.html" target="_blank" rel="noopener">Polityką prywatności</a>
+          w wersji <b id="legalPrivacyVersion">1.0-2026-06-15</b>.
+        </span>
+      </label>
+
+      <div class="legal-dialog-actions">
+        <button id="legalLogoutBtn" class="secondary" type="button">Wyloguj się</button>
+        <button id="legalAcceptSubmit" class="primary" type="submit">
+          Akceptuję i przechodzę dalej
+        </button>
+      </div>
+    </form>
+
+    <div id="legalAcceptanceMessage" class="auth-message hidden" role="status"></div>
+  </dialog>
 
   <dialog id="resetRequestDialog">
     <div class="dialog-head">
@@ -624,6 +736,10 @@
         <h2>Wybierz jeden z trzech pakietów</h2>
       </div>
       <button id="closePlansDialog" class="icon-btn" type="button" aria-label="Zamknij">×</button>
+    </div>
+
+    <div id="salesAvailabilityNotice" class="sales-availability-notice sales-unavailable">
+      <strong>Sprawdzanie dostępności sprzedaży…</strong>
     </div>
 
     <div class="plans-grid simplified-plans-grid">
@@ -769,15 +885,175 @@
     </section>
 
     <section class="admin-section">
-      <h3>Dane do przelewu</h3>
-      <form id="paymentSettingsForm" class="admin-form">
-        <label>Odbiorca<input id="settingSellerName" type="text" placeholder="np. Kamil Mazur" /></label>
-        <label>Numer konta<input id="settingBankAccount" type="text" inputmode="numeric" placeholder="26 cyfr" /></label>
-        <label>Nazwa banku<input id="settingBankName" type="text" placeholder="opcjonalnie" /></label>
-        <label>E-mail kontaktowy<input id="settingPaymentEmail" type="email" /></label>
-        <label>Dodatkowa instrukcja<textarea id="settingInstructions" rows="3" placeholder="np. Pakiet aktywujemy po zaksięgowaniu wpłaty."></textarea></label>
-        <button class="primary" type="submit">Zapisz dane płatności</button>
+      <div class="orders-heading">
+        <div>
+          <p class="eyebrow">DZIAŁALNOŚĆ NIEREJESTROWANA</p>
+          <h3>Dane sprzedawcy i uruchomienie sprzedaży</h3>
+        </div>
+        <a class="secondary small" href="./seller-info.html" target="_blank" rel="noopener">
+          Publiczne dane
+        </a>
+      </div>
+
+      <div id="businessReadinessStatus" class="business-readiness business-not-ready"></div>
+
+      <form id="paymentSettingsForm" class="admin-form business-settings-form">
+        <label>
+          Sprzedawca
+          <input id="settingSellerName" type="text" placeholder="Kamil Mazur" />
+        </label>
+
+        <label>
+          Forma działalności
+          <input id="settingBusinessModel" type="text" value="działalność nierejestrowana" readonly />
+        </label>
+
+        <label class="admin-form-wide">
+          Rzeczywisty adres do kontaktu i reklamacji
+          <textarea
+            id="settingCorrespondenceAddress"
+            rows="3"
+            placeholder="Wpisz adres, pod którym rzeczywiście odbierasz korespondencję i reklamacje"
+          ></textarea>
+        </label>
+
+        <label>
+          E-mail reklamacyjny
+          <input id="settingComplaintsEmail" type="email" placeholder="logo.wizytowka@gmail.com" />
+        </label>
+
+        <label>
+          E-mail dotyczący płatności
+          <input id="settingPaymentEmail" type="email" />
+        </label>
+
+        <label>
+          Numer konta
+          <input id="settingBankAccount" type="text" inputmode="numeric" placeholder="26 cyfr" />
+        </label>
+
+        <label>
+          Nazwa banku
+          <input id="settingBankName" type="text" placeholder="opcjonalnie" />
+        </label>
+
+        <label class="admin-form-wide">
+          Dodatkowa instrukcja
+          <textarea id="settingInstructions" rows="3" placeholder="Pakiet aktywujemy po zaksięgowaniu wpłaty."></textarea>
+        </label>
+
+        <label class="sales-enable-check admin-form-wide">
+          <input id="settingSalesEnabled" type="checkbox" />
+          <span>
+            Włącz sprzedaż płatnych pakietów. Potwierdzam, że powyższe dane są prawdziwe i aktualne.
+          </span>
+        </label>
+
+        <button class="primary admin-form-wide" type="submit">
+          Zapisz dane działalności i płatności
+        </button>
       </form>
+    </section>
+
+    <section class="admin-section unregistered-section">
+      <div class="orders-heading">
+        <div>
+          <p class="eyebrow">EWIDENCJA SPRZEDAŻY</p>
+          <h3>Działalność nierejestrowana</h3>
+        </div>
+        <div class="unregistered-actions">
+          <button id="refreshUnregisteredDashboardBtn" class="secondary small" type="button">
+            Odśwież
+          </button>
+          <button id="exportUnregisteredSalesBtn" class="secondary small" type="button">
+            Eksport CSV
+          </button>
+        </div>
+      </div>
+
+      <p id="unregisteredDashboardError" class="error hidden">
+        Nie udało się pobrać ewidencji. Uruchom skrypt LeadFinder 7.2 w Supabase.
+      </p>
+
+      <div class="unregistered-summary-grid">
+        <article>
+          <span id="unregisteredQuarterLabel">Bieżący kwartał</span>
+          <strong id="unregisteredRevenueTotal">0 zł</strong>
+          <small>przychód należny</small>
+        </article>
+        <article>
+          <span>Limit kwartalny</span>
+          <strong id="unregisteredRevenueLimit">10,813.50 zł</strong>
+          <small>ustawienie na 2026 r.</small>
+        </article>
+        <article>
+          <span>Pozostało do limitu</span>
+          <strong id="unregisteredRevenueRemaining">10,813.50 zł</strong>
+          <small>wartość orientacyjna</small>
+        </article>
+        <article>
+          <span>Liczba wpisów</span>
+          <strong id="unregisteredSalesCount">0</strong>
+          <small>bieżący kwartał</small>
+        </article>
+      </div>
+
+      <div class="unregistered-progress">
+        <div id="unregisteredRevenueProgress" class="unregistered-progress-bar progress-safe"></div>
+      </div>
+
+      <div id="unregisteredRevenueAlert" class="unregistered-alert alert-safe">
+        <strong>Limit jest pod kontrolą</strong>
+      </div>
+
+      <form id="unregisteredSaleForm" class="manual-sale-form">
+        <label>
+          Data sprzedaży
+          <input id="manualSaleDate" type="date" required />
+        </label>
+        <label>
+          Przychód należny
+          <input id="manualSaleAmountDue" type="text" inputmode="decimal" placeholder="np. 899,00" required />
+        </label>
+        <label>
+          Kwota otrzymana
+          <input id="manualSaleAmountReceived" type="text" inputmode="decimal" placeholder="np. 899,00" />
+        </label>
+        <label>
+          Prowizja operatora
+          <input id="manualSaleProcessingFee" type="text" inputmode="decimal" placeholder="np. 10,00" />
+        </label>
+        <label class="manual-sale-description">
+          Opis
+          <input id="manualSaleDescription" type="text" placeholder="np. pakiet LeadFinder lub wykonanie strony WWW" required />
+        </label>
+        <button class="primary" type="submit">Dodaj ręczny wpis</button>
+      </form>
+
+      <p class="hint">
+        Opłacone pakiety LeadFinder są dodawane automatycznie. Do limitu liczony jest przychód należny,
+        a prowizja operatora jest wykazywana osobno i nie pomniejsza tej wartości.
+      </p>
+
+      <div class="unregistered-table-wrap">
+        <table class="unregistered-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Opis</th>
+              <th>Zamówienie</th>
+              <th>Należne</th>
+              <th>Otrzymane</th>
+              <th>Prowizja</th>
+              <th>Narastająco</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="unregisteredSalesTable">
+            <tr><td colspan="8">Ładowanie…</td></tr>
+          </tbody>
+        </table>
+      </div>
     </section>
 
     <section class="admin-section">
@@ -910,6 +1186,13 @@
   </dialog>
 
   <div id="toast" class="toast hidden" role="status"></div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const input = document.getElementById("manualSaleDate");
+      if (input && !input.value) input.value = new Date().toISOString().slice(0, 10);
+    });
+  </script>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./app.js"></script>

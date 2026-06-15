@@ -1,10 +1,16 @@
-const CACHE = "leadfinder-v7-0-account-security";
+const CACHE = "leadfinder-v7-2-unregistered-business";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.webmanifest",
+  "./privacy.html",
+  "./terms.html",
+  "./data-sources.html",
+  "./delete-account.html",
+  "./seller-info.html",
+  "./legal.css",
   "./icons/icon-192.png",
   "./icons/icon-512.png"
 ];
