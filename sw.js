@@ -1,4 +1,4 @@
-const CACHE = "leadfinder-v6-1-shared-cache";
+const CACHE = "leadfinder-v6-2-search-repair";
 const ASSETS = [
   "./",
   "./index.html",

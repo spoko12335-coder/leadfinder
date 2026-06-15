@@ -4,6 +4,8 @@ const MAX_RESULTS_PER_SEARCH = 10;
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
 const SEARCH_MAX_WAIT_MS = 11000;
 const OVERPASS_HEDGE_DELAY_MS = 2800;
+const SHARED_CACHE_LOOKUP_TIMEOUT_MS = 800;
+const SHARED_CACHE_WRITE_TIMEOUT_MS = 2500;
 
 const supabaseClient = window.supabase.createClient(
   SUPABASE_URL,
@@ -41,6 +43,7 @@ const state = {
   lastSearchCacheHit: false,
   lastSearchCacheScope: "",
   lastSearchDataSource: "",
+  sharedCacheAvailable: true,
   deferredPrompt: null
 };
 
@@ -1093,17 +1096,16 @@ async function handleSearch(event) {
     );
     reserved = true;
 
-    const searchResponse = await fetchBusinessesFast(
+    let searchResponse = await fetchBusinessesFast(
       location.lat,
       location.lon,
       radius,
       categoryDefinition,
       city
     );
-    const elements = searchResponse.elements;
 
-    const normalizedResults = normalizeBusinesses(
-      elements,
+    let normalizedResults = normalizeBusinesses(
+      searchResponse.elements,
       categoryDefinition,
       city,
       purpose,
@@ -1111,9 +1113,39 @@ async function handleSearch(event) {
       offerBenefit
     );
 
-    state.results = normalizedResults
+    let usableResults = normalizedResults
       .filter(company => isUsableLead(company, purpose))
       .slice(0, MAX_RESULTS_PER_SEARCH);
+
+    if (!usableResults.length && searchResponse.cacheHit) {
+      setLoadingStage("Pamięć nie zawiera dobrych leadów — odświeżam dane…");
+
+      invalidateBusinessCache(searchResponse.cacheKey);
+
+      searchResponse = await fetchBusinessesFast(
+        location.lat,
+        location.lon,
+        radius,
+        categoryDefinition,
+        city,
+        { bypassCache: true }
+      );
+
+      normalizedResults = normalizeBusinesses(
+        searchResponse.elements,
+        categoryDefinition,
+        city,
+        purpose,
+        offerName,
+        offerBenefit
+      );
+
+      usableResults = normalizedResults
+        .filter(company => isUsableLead(company, purpose))
+        .slice(0, MAX_RESULTS_PER_SEARCH);
+    }
+
+    state.results = usableResults;
 
     state.lastSearch = {
       city,
@@ -2150,7 +2182,8 @@ async function fetchBusinessesFast(
   lon,
   radius,
   categoryDefinition,
-  city
+  city,
+  options = {}
 ) {
   const cacheKey = createBusinessSearchCacheKey(
     lat,
@@ -2159,36 +2192,44 @@ async function fetchBusinessesFast(
     categoryDefinition
   );
 
-  const cached = getCachedBusinessElements(cacheKey);
-  if (cached) {
-    setLoadingStage("Wczytuję wyniki z pamięci urządzenia…");
-    return {
-      elements: cached.elements,
-      source: cached.source || "local-cache",
-      cacheHit: true,
-      cacheScope: "local"
-    };
+  if (!options.bypassCache) {
+    const cached = getCachedBusinessElements(cacheKey);
+    if (cached) {
+      setLoadingStage("Wczytuję wyniki z pamięci urządzenia…");
+      return {
+        elements: cached.elements,
+        source: cached.source || "local-cache",
+        cacheHit: true,
+        cacheScope: "local",
+        cacheKey
+      };
+    }
+
+    setLoadingStage("Szybko sprawdzam wspólną pamięć…");
+    const sharedCached = await getSharedBusinessElements(cacheKey);
+
+    if (sharedCached) {
+      setCachedBusinessElements(
+        cacheKey,
+        sharedCached.elements,
+        sharedCached.source || "shared-cache"
+      );
+
+      return {
+        elements: sharedCached.elements,
+        source: sharedCached.source || "shared-cache",
+        cacheHit: true,
+        cacheScope: "shared",
+        cacheKey
+      };
+    }
   }
 
-  setLoadingStage("Sprawdzam wspólną pamięć wyników…");
-  const sharedCached = await getSharedBusinessElements(cacheKey);
-
-  if (sharedCached) {
-    setCachedBusinessElements(
-      cacheKey,
-      sharedCached.elements,
-      sharedCached.source || "shared-cache"
-    );
-
-    return {
-      elements: sharedCached.elements,
-      source: sharedCached.source || "shared-cache",
-      cacheHit: true,
-      cacheScope: "shared"
-    };
-  }
-
-  setLoadingStage("Szukam firm równolegle…");
+  setLoadingStage(
+    options.bypassCache
+      ? "Pobieram świeże dane firm…"
+      : "Szukam firm równolegle…"
+  );
 
   const selectors = uniqueSelectors([
     ...(categoryDefinition.exactSelectors || []),
@@ -2264,7 +2305,8 @@ async function fetchBusinessesFast(
     elements: combined,
     source,
     cacheHit: false,
-    cacheScope: ""
+    cacheScope: "",
+    cacheKey
   };
 }
 
@@ -2285,7 +2327,8 @@ out center 80;`;
 
   const endpoints = [
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter"
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter"
   ];
 
   const controllers = [];
@@ -2335,12 +2378,24 @@ out center 80;`;
   );
 
   const backup = new Promise((resolve, reject) => {
-    backupTimer = setTimeout(() => {
-      requestEndpoint(
-        endpoints[1],
-        7600,
-        "Pierwszy serwer odpowiada wolno — uruchamiam zapasowy…"
-      ).then(resolve, reject);
+    backupTimer = setTimeout(async () => {
+      try {
+        const result = await Promise.any([
+          requestEndpoint(
+            endpoints[1],
+            7200,
+            "Pierwszy serwer odpowiada wolno — uruchamiam zapasowy…"
+          ),
+          requestEndpoint(
+            endpoints[2],
+            7200,
+            "Sprawdzam dodatkowy serwer firm…"
+          )
+        ]);
+        resolve(result);
+      } catch (error) {
+        reject(error);
+      }
     }, OVERPASS_HEDGE_DELAY_MS);
   });
 
@@ -2423,21 +2478,53 @@ function createBusinessSearchCacheKey(
 }
 
 async function getSharedBusinessElements(cacheKey) {
-  if (!state.session) return null;
+  if (!state.session || !state.sharedCacheAvailable) return null;
 
   try {
-    const { data, error } = await supabaseClient.rpc(
+    const rpcPromise = supabaseClient.rpc(
       "get_shared_search_cache",
       { p_cache_key: cacheKey }
     );
 
+    const result = await Promise.race([
+      rpcPromise,
+      new Promise(resolve => {
+        setTimeout(
+          () => resolve({ timedOut: true }),
+          SHARED_CACHE_LOOKUP_TIMEOUT_MS
+        );
+      })
+    ]);
+
+    if (result?.timedOut) {
+      console.warn("Wspólny cache nie odpowiedział w 0,8 s — pomijam go.");
+      return null;
+    }
+
+    const { data, error } = result;
+
     if (error) {
       console.warn("Odczyt wspólnego cache:", error);
+
+      if (
+        error.code === "PGRST202" ||
+        /get_shared_search_cache|function.*not found|schema cache/i.test(
+          `${error.message || ""} ${error.details || ""}`
+        )
+      ) {
+        state.sharedCacheAvailable = false;
+      }
+
       return null;
     }
 
     const row = Array.isArray(data) ? data[0] : data;
-    if (!row || !Array.isArray(row.elements) || !row.elements.length) {
+
+    if (
+      !row ||
+      !Array.isArray(row.elements) ||
+      !row.elements.length
+    ) {
       return null;
     }
 
@@ -2448,7 +2535,7 @@ async function getSharedBusinessElements(cacheKey) {
       expiresAt: row.expires_at || null
     };
   } catch (error) {
-    console.warn("Wspólny cache jest chwilowo niedostępny:", error);
+    console.warn("Wspólny cache jest pomijany:", error);
     return null;
   }
 }
@@ -2466,7 +2553,9 @@ async function putSharedBusinessElements({
 
   const payload = elements.slice(0, 100);
 
-  const { error } = await supabaseClient.rpc(
+  if (!state.sharedCacheAvailable) return;
+
+  const rpcPromise = supabaseClient.rpc(
     "put_shared_search_cache",
     {
       p_cache_key: cacheKey,
@@ -2479,7 +2568,44 @@ async function putSharedBusinessElements({
     }
   );
 
-  if (error) throw error;
+  const result = await Promise.race([
+    rpcPromise,
+    new Promise(resolve => {
+      setTimeout(
+        () => resolve({ timedOut: true }),
+        SHARED_CACHE_WRITE_TIMEOUT_MS
+      );
+    })
+  ]);
+
+  if (result?.timedOut) return;
+
+  const { error } = result;
+
+  if (error) {
+    if (
+      error.code === "PGRST202" ||
+      /put_shared_search_cache|function.*not found|schema cache/i.test(
+        `${error.message || ""} ${error.details || ""}`
+      )
+    ) {
+      state.sharedCacheAvailable = false;
+    }
+
+    throw error;
+  }
+}
+
+function invalidateBusinessCache(cacheKey) {
+  if (!cacheKey) return;
+
+  state.searchCache.delete(cacheKey);
+
+  try {
+    sessionStorage.removeItem(`leadfinder_search_${cacheKey}`);
+  } catch {
+    // Pamięć przeglądarki jest opcjonalna.
+  }
 }
 
 function getCachedBusinessElements(cacheKey) {

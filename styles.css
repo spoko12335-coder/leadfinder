@@ -2250,3 +2250,23 @@ body.guest-mode {
   0%, 100% { opacity: 1; }
   50% { opacity: .72; }
 }
+
+
+/* =========================================================
+   LEADFINDER 6.2 — ODPORNA WYSZUKIWARKA
+   ========================================================= */
+
+.error:not(.hidden) {
+  animation: repairNoticeIn .22s ease-out;
+}
+
+@keyframes repairNoticeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
